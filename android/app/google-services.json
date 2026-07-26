@@ -1,0 +1,82 @@
+{
+  "project_info": {
+    "project_number": "737235152460",
+    "project_id": "pyracheck",
+    "storage_bucket": "pyracheck.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:737235152460:android:cf1975d0a78996526a4ee9",
+        "android_client_info": {
+          "package_name": "com.example.adminpyra"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "737235152460-ns5mkvg1joja9ifo953i9fae9df2r92p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZvMSdEXFDuaYV4OSOF0tMYXEsU5wvBAE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "737235152460-ns5mkvg1joja9ifo953i9fae9df2r92p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "737235152460-1esnf063gf4pvq1dckr7gbv4oltjf0u0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.pyracheck"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:737235152460:android:b94c13f16a54f9af6a4ee9",
+        "android_client_info": {
+          "package_name": "com.example.pyracheck"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "737235152460-ns5mkvg1joja9ifo953i9fae9df2r92p.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDZvMSdEXFDuaYV4OSOF0tMYXEsU5wvBAE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "737235152460-ns5mkvg1joja9ifo953i9fae9df2r92p.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "737235152460-1esnf063gf4pvq1dckr7gbv4oltjf0u0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.pyracheck"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
