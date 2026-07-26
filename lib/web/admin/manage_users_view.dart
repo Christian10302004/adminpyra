@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
+import 'dart:math';
 
 class ManageUsersView extends StatefulWidget {
   const ManageUsersView({super.key});
@@ -67,6 +70,8 @@ class _ManageUsersViewState extends State<ManageUsersView> {
                     _buildRoleItem('User', Icons.shield, const Color(0xFF1B5E20), 'Pyra User (Mobile)'),
                     _buildRoleItem('Inspector', Icons.local_fire_department, const Color(0xFFFF5722), 'Check Inspector (Audit)'),
                     _buildRoleItem('Clerk/Encoder', Icons.edit_note_rounded, Colors.cyan, 'Clerk / Data Encoder'),
+                    _buildRoleItem('Fire Marshal', Icons.verified_user_rounded, Colors.deepPurpleAccent, 'Fire Marshal'),
+                    _buildRoleItem('admin', Icons.admin_panel_settings_rounded, Colors.redAccent, 'System Administrator'),
                   ],
                   onChanged: (value) => setState(() => selectedRole = value!),
                 ),
@@ -84,38 +89,38 @@ class _ManageUsersViewState extends State<ManageUsersView> {
               onPressed: () async {
                 if (emailController.text.isNotEmpty && nameController.text.isNotEmpty) {
                   try {
-                    // Check password length
                     if (passwordController.text.length < 6) {
                       throw 'Password must be at least 6 characters long.';
                     }
 
-                    // 1. Create a secondary Firebase app
-                    // Using a unique name to avoid "app already exists" errors
                     String appName = 'SecondaryApp_${DateTime.now().millisecondsSinceEpoch}';
                     FirebaseApp secondaryApp = await Firebase.initializeApp(
                       name: appName,
                       options: Firebase.app().options,
                     );
 
-                    // 2. Create the account in Firebase Authentication
                     UserCredential userCredential = await FirebaseAuth.instanceFor(app: secondaryApp)
                         .createUserWithEmailAndPassword(
                       email: emailController.text.trim(),
                       password: passwordController.text.trim(),
                     );
 
-                    // 3. Storing the user data in Firestore with the exact requested fields
+                    String accountId = 'PYRA-${10000 + Random().nextInt(90000)}';
+                    var bytes = utf8.encode(passwordController.text.trim());
+                    var hashedPassword = sha256.convert(bytes).toString();
+
                     await _firestore.collection('users').doc(userCredential.user!.uid).set({
+                      'account_id': accountId,
                       'createdAt': FieldValue.serverTimestamp(),
                       'email': emailController.text.trim(),
                       'full_name': nameController.text.trim(),
                       'lastSeen': FieldValue.serverTimestamp(),
+                      'password': hashedPassword, 
                       'phone': phoneController.text.trim(),
                       'role': selectedRole,
                       'status': 'active',
                     });
 
-                    // 4. Clean up the secondary app
                     await secondaryApp.delete();
 
                     if (context.mounted) {
@@ -266,12 +271,18 @@ class _ManageUsersViewState extends State<ManageUsersView> {
                           final String role = data['role'] ?? 'User';
                           
                           Color roleColor;
-                          switch (role) {
-                            case 'Inspector':
+                          switch (role.toLowerCase()) {
+                            case 'inspector':
                               roleColor = const Color(0xFFFF5722);
                               break;
-                            case 'Clerk/Encoder':
+                            case 'clerk/encoder':
                               roleColor = Colors.cyan;
+                              break;
+                            case 'fire marshal':
+                              roleColor = Colors.deepPurpleAccent;
+                              break;
+                            case 'admin':
+                              roleColor = Colors.redAccent;
                               break;
                             default:
                               roleColor = const Color(0xFF1B5E20);

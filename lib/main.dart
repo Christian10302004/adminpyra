@@ -1,18 +1,32 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // Required for kIsWeb
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'firebase_options.dart';
-import 'login_page.dart';
-import 'admin_dashboard.dart';
-import 'clerk/clerk_dashboard.dart';
+import 'web/login/login_page.dart';
+import 'web/admin/admin_dashboard.dart';
+import 'web/clerk/clerk_dashboard.dart';
+import 'web/landing_page/landing_page.dart';
+import 'android/user/user_home.dart';
+import 'android/login/android_login_page.dart';
+import 'android/inspector/inspector_home.dart'; // Added Inspector Home
+import 'services/auth_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(const MyApp());
+  runApp(
+    MultiProvider(
+      providers: [
+        Provider<AuthService>(create: (_) => AuthService()),
+      ],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -48,28 +62,29 @@ class AuthWrapper extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnapshot) {
-        // If the connection is still being established, show nothing/splash
         if (authSnapshot.connectionState == ConnectionState.waiting) {
-          return const Scaffold(backgroundColor: Colors.black, body: Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20))));
+          return const Scaffold(
+            backgroundColor: Colors.black,
+            body: Center(child: CircularProgressIndicator(color: Color(0xFF1B5E20))),
+          );
         }
 
         final user = authSnapshot.data;
 
-        // If no user is logged in, show Login Page
         if (user == null) {
-          return const LoginPage();
+          if (kIsWeb) {
+            return const LandingPage(); 
+          } else {
+            return const AndroidLoginPage(); 
+          }
         }
 
-        // ADDED KEY: Forces Flutter to rebuild the entire role-checking logic 
-        // every time a DIFFERENT user logs in. This prevents the "Admin" to "Clerk" 
-        // state conflict that required a refresh.
         return StreamBuilder<DocumentSnapshot>(
           key: ValueKey(user.uid),
           stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
           builder: (context, roleSnapshot) {
             if (roleSnapshot.hasData && roleSnapshot.data!.exists) {
               final data = roleSnapshot.data!.data() as Map<String, dynamic>;
-              // Case-insensitive role check for "Admin", "admin", "Clerk/Encoder", etc.
               final String rawRole = data['role']?.toString() ?? 'User';
               final String role = rawRole.toLowerCase();
 
@@ -77,12 +92,15 @@ class AuthWrapper extends StatelessWidget {
                 return const AdminDashboard();
               } else if (role == 'clerk/encoder') {
                 return const ClerkDashboard();
+              } else if (role == 'user') {
+                return const UserHome();
+              } else if (role == 'inspector') { // Added Inspector Routing
+                return const InspectorHome();
               } else {
                 return _buildRestrictedScreen(rawRole);
               }
             }
 
-            // High-speed loading screen that matches the splash/logo
             return Scaffold(
               backgroundColor: Colors.black,
               body: Center(

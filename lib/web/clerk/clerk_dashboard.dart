@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'dart:html' as html; // WEB REFRESH SUPPORT
-import '../login_page.dart';
-import '../inspection_management_view.dart';
-import '../reports_certificates_view.dart';
+import '../../services/web_helper.dart'; 
+import '../login/login_page.dart';
+import '../admin/inspection_management_view.dart';
+import '../admin/reports_certificates_view.dart';
 
 class ClerkDashboard extends StatefulWidget {
   const ClerkDashboard({super.key});
@@ -28,7 +28,6 @@ class _ClerkDashboardState extends State<ClerkDashboard> {
       backgroundColor: Colors.black,
       body: Row(
         children: [
-          // Sidebar with Clerk Cyan Theme
           Container(
             width: 280,
             decoration: const BoxDecoration(
@@ -36,8 +35,8 @@ class _ClerkDashboardState extends State<ClerkDashboard> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color(0xFF002E2E), // Deep Cyan
-                  Color(0xFF001A1A), // Darker Cyan
+                  Color(0xFF002E2E), 
+                  Color(0xFF001A1A), 
                 ],
               ),
               border: Border(right: BorderSide(color: Colors.white10)),
@@ -87,7 +86,6 @@ class _ClerkDashboardState extends State<ClerkDashboard> {
               ],
             ),
           ),
-          // Main Content
           Expanded(
             child: Column(
               children: [
@@ -147,8 +145,7 @@ class _ClerkDashboardState extends State<ClerkDashboard> {
             ),
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
-              // Trigger a full web page reload to wipe state completely
-              html.window.location.reload();
+              reloadPage();
             },
             child: const Text('LOGOUT', style: TextStyle(color: Colors.white)),
           ),

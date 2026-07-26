@@ -3,8 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'dart:html' as html; // WEB REFRESH SUPPORT
-import 'login_page.dart';
+import '../../services/web_helper.dart'; 
+import '../login/login_page.dart';
 import 'manage_users_view.dart';
 import 'inspection_management_view.dart';
 import 'reports_certificates_view.dart';
@@ -33,7 +33,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
       backgroundColor: Colors.black,
       body: Row(
         children: [
-          // Sidebar with Logo Theme Gradient
           Container(
             width: 280,
             decoration: const BoxDecoration(
@@ -41,8 +40,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  Color(0xFF4A0000), // Deep Crimson
-                  Color(0xFF2E0000), // Dark Maroon
+                  Color(0xFF4A0000), 
+                  Color(0xFF2E0000), 
                 ],
               ),
               border: Border(right: BorderSide(color: Colors.white10)),
@@ -103,7 +102,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
               ],
             ),
           ),
-          // Main Content
           Expanded(
             child: Column(
               children: [
@@ -167,7 +165,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
-              html.window.location.reload();
+              reloadPage();
             },
             child: const Text('LOGOUT', style: TextStyle(color: Colors.white)),
           ),
@@ -237,7 +235,6 @@ class OverviewView extends StatelessWidget {
               const Text('Heatmap: San Francisco, Agusan del Sur',
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
               const SizedBox(height: 20),
-              // Map Container
               Container(
                 height: 400,
                 decoration: BoxDecoration(
@@ -248,7 +245,7 @@ class OverviewView extends StatelessWidget {
                   borderRadius: BorderRadius.circular(28),
                   child: FlutterMap(
                     options: const MapOptions(
-                      initialCenter: LatLng(8.5106, 125.9793), // San Francisco, Agusan del Sur
+                      initialCenter: LatLng(8.5106, 125.9793), 
                       initialZoom: 14.0,
                     ),
                     children: [
@@ -256,7 +253,6 @@ class OverviewView extends StatelessWidget {
                         urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                         userAgentPackageName: 'com.example.adminpyra',
                       ),
-                      // Simulated Heatmap using CircleLayer
                       CircleLayer(
                         circles: [
                           CircleMarker(
