@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import '../../services/web_helper.dart'; 
-import '../login/login_page.dart';
+import 'package:provider/provider.dart';
+import '../../services/web_helper.dart';
+import '../../services/theme_provider.dart';
 import '../admin/inspection_management_view.dart';
 import '../admin/reports_certificates_view.dart';
+import 'clerk_theme.dart';
+import 'tabs/clerk_overview_tab.dart';
+import 'tabs/clerk_reports_tab.dart';
 
 class ClerkDashboard extends StatefulWidget {
   const ClerkDashboard({super.key});
@@ -16,105 +19,46 @@ class ClerkDashboard extends StatefulWidget {
 class _ClerkDashboardState extends State<ClerkDashboard> {
   int _selectedIndex = 0;
 
-  final List<String> _titles = [
+  static const _titles = <String>[
     'Clerk Terminal',
-    'Data Entry (Inspections)',
-    'Reports & Records',
+    'Inspection Tracking',
+    'Certificate Issuance',
+    'Data Reports',
   ];
 
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
+    final isDark = themeProvider.isDarkMode;
+
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: Tok.bg,
       body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            width: 280,
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF002E2E), 
-                  Color(0xFF001A1A), 
-                ],
-              ),
-              border: Border(right: BorderSide(color: Colors.white10)),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 40),
-                Image.asset('assets/images/logo.png', height: 90),
-                const SizedBox(height: 12),
-                RichText(
-                  text: const TextSpan(
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, letterSpacing: -0.5),
-                    children: [
-                      TextSpan(text: 'Pyra', style: TextStyle(color: Color(0xFF2E7D32))),
-                      TextSpan(text: 'Check', style: TextStyle(color: Colors.cyan)),
-                    ],
-                  ),
-                ),
-                const Text('CLERK / ENCODER', style: TextStyle(color: Colors.white38, fontSize: 10, letterSpacing: 2)),
-                const SizedBox(height: 50),
-                _NavTile(
-                  icon: Icons.dashboard_customize_rounded,
-                  title: 'Clerk Terminal',
-                  onTap: () => setState(() => _selectedIndex = 0),
-                  selected: _selectedIndex == 0,
-                ),
-                _NavTile(
-                  icon: Icons.edit_document,
-                  title: 'Data Entry',
-                  onTap: () => setState(() => _selectedIndex = 1),
-                  selected: _selectedIndex == 1,
-                ),
-                _NavTile(
-                  icon: Icons.folder_shared_rounded,
-                  title: 'Reports & Records',
-                  onTap: () => setState(() => _selectedIndex = 2),
-                  selected: _selectedIndex == 2,
-                ),
-                const Spacer(),
-                const Divider(indent: 30, endIndent: 30, color: Colors.white10),
-                _NavTile(
-                  icon: Icons.logout_rounded,
-                  title: 'Sign Out',
-                  onTap: () => _showLogoutDialog(),
-                ),
-                const SizedBox(height: 30),
-              ],
-            ),
+          _Sidebar(
+            selectedIndex: _selectedIndex,
+            titles: _titles,
+            onSelect: (i) => setState(() => _selectedIndex = i),
+            onLogout: _showLogoutDialog,
           ),
           Expanded(
             child: Column(
               children: [
-                AppBar(
-                  backgroundColor: Colors.black,
-                  elevation: 0,
-                  title: Text(_titles[_selectedIndex],
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-                  actions: [
-                    const Center(child: Text('ENCODER ACCESS', style: TextStyle(color: Colors.cyan, fontSize: 10, fontWeight: FontWeight.bold))),
-                    const SizedBox(width: 20),
-                    const CircleAvatar(
-                      backgroundColor: Colors.cyan,
-                      child: Icon(Icons.person, color: Colors.white),
-                    ),
-                    const SizedBox(width: 24),
-                  ],
-                ),
+                _TopBar(title: _titles[_selectedIndex]),
                 Expanded(
-                  child: Container(
-                    color: Colors.black,
-                    child: IndexedStack(
-                      index: _selectedIndex,
-                      children: [
-                        const ClerkOverview(),
-                        const InspectionManagementView(),
-                        const ReportsCertificatesView(),
-                      ],
-                    ),
+                  child: IndexedStack(
+                    key: ValueKey('clerk_stack_$isDark'),
+                    index: _selectedIndex,
+                    children: [
+                      ClerkOverviewTab(
+                        onTabRequested: (index) =>
+                            setState(() => _selectedIndex = index),
+                      ),
+                      const InspectionManagementView(),
+                      const ReportsCertificatesView(),
+                      const ClerkReportsTab(),
+                    ],
                   ),
                 ),
               ],
@@ -129,25 +73,34 @@ class _ClerkDashboardState extends State<ClerkDashboard> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1A1A),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Colors.white10)),
-        title: const Text('Confirm Logout', style: TextStyle(color: Colors.white)),
-        content: const Text('Are you sure you want to sign out from the encoder terminal?', style: TextStyle(color: Colors.white70)),
+        backgroundColor: Tok.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tok.rLg),
+          side: BorderSide(color: Tok.border),
+        ),
+        title: Text('Sign out?',
+            style: TextStyle(color: Tok.textHi, fontSize: 16, fontWeight: FontWeight.w600)),
+        content: Text('You will be returned to the sign-in screen.',
+            style: TextStyle(color: Tok.textMid, fontSize: 13)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('CANCEL', style: TextStyle(color: Colors.grey)),
+            child: Text('Cancel', style: TextStyle(color: Tok.textMid, fontSize: 13)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.cyan,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              backgroundColor: Tok.brand,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Tok.rMd)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             ),
             onPressed: () async {
               await FirebaseAuth.instance.signOut();
               reloadPage();
             },
-            child: const Text('LOGOUT', style: TextStyle(color: Colors.white)),
+            child: const Text('Sign out',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
@@ -155,35 +108,99 @@ class _ClerkDashboardState extends State<ClerkDashboard> {
   }
 }
 
-class ClerkOverview extends StatelessWidget {
-  const ClerkOverview({super.key});
+class _Sidebar extends StatelessWidget {
+  final int selectedIndex;
+  final List<String> titles;
+  final ValueChanged<int> onSelect;
+  final VoidCallback onLogout;
+  const _Sidebar({
+    required this.selectedIndex,
+    required this.titles,
+    required this.onSelect,
+    required this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(40),
+    return Container(
+      width: 248,
+      decoration: BoxDecoration(
+        color: Tok.surface,
+        border: Border(right: BorderSide(color: Tok.border)),
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text('Data Statistics', style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white)),
-          const SizedBox(height: 32),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              int crossAxisCount = constraints.maxWidth > 800 ? 2 : 1;
-              return GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: crossAxisCount,
-                crossAxisSpacing: 30,
-                mainAxisSpacing: 30,
-                childAspectRatio: 2.5,
-                children: [
-                  _StatCard(title: 'PENDING ENTRIES', value: '24', icon: Icons.pending_rounded, color: Colors.cyan),
-                  _StatCard(title: 'PROCESSED TODAY', value: '12', icon: Icons.check_circle_outline, color: const Color(0xFF2E7D32)),
-                ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+            child: Row(
+              children: [
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: -0.3),
+                    children: [
+                      TextSpan(text: 'Pyra', style: TextStyle(color: Tok.ok)),
+                      TextSpan(text: 'Check', style: TextStyle(color: Tok.brand)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text('CLERK / ENCODER', style: Tok.label),
+          ),
+          const SizedBox(height: 8),
+          Divider(height: 1, color: Tok.borderSoft),
+          const SizedBox(height: 8),
+          _NavTile(
+            icon: Icons.dashboard_customize_outlined,
+            title: titles[0],
+            selected: selectedIndex == 0,
+            onTap: () => onSelect(0),
+          ),
+          _NavTile(
+            icon: Icons.edit_document,
+            title: titles[1],
+            selected: selectedIndex == 1,
+            onTap: () => onSelect(1),
+          ),
+          _NavTile(
+            icon: Icons.folder_shared_outlined,
+            title: titles[2],
+            selected: selectedIndex == 2,
+            onTap: () => onSelect(2),
+          ),
+          _NavTile(
+            icon: Icons.bar_chart_rounded,
+            title: titles[3],
+            selected: selectedIndex == 3,
+            onTap: () => onSelect(3),
+          ),
+          const Spacer(),
+          Divider(height: 1, color: Tok.borderSoft),
+          Consumer<ThemeProvider>(
+            builder: (context, themeProvider, child) {
+              final isDark = themeProvider.isDarkMode;
+              return _NavTile(
+                icon: isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                title: isDark ? 'Light Mode' : 'Dark Mode',
+                selected: false,
+                onTap: () {
+                  themeProvider.toggleTheme();
+                },
               );
             },
           ),
+          _NavTile(
+            icon: Icons.logout_rounded,
+            title: 'Sign out',
+            selected: false,
+            onTap: onLogout,
+          ),
+          const SizedBox(height: 12),
         ],
       ),
     );
@@ -193,68 +210,136 @@ class ClerkOverview extends StatelessWidget {
 class _NavTile extends StatelessWidget {
   final IconData icon;
   final String title;
-  final VoidCallback onTap;
   final bool selected;
-
-  const _NavTile({required this.icon, required this.title, required this.onTap, this.selected = false});
+  final VoidCallback onTap;
+  const _NavTile({
+    required this.icon,
+    required this.title,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      child: ListTile(
-        leading: Icon(icon, color: selected ? Colors.white : Colors.white24),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: selected ? Colors.white : Colors.white24,
-            fontWeight: selected ? FontWeight.w900 : FontWeight.normal,
-            fontSize: 14,
-          ),
-        ),
+    final fg = selected ? Tok.textHi : Tok.textMid;
+    return Material(
+      color: selected ? Tok.surfaceAlt : Colors.transparent,
+      child: InkWell(
         onTap: onTap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        tileColor: selected ? Colors.cyan.withOpacity(0.1) : Colors.transparent,
+        hoverColor: Tok.surfaceAlt.withValues(alpha: 0.5),
+        child: Stack(
+          children: [
+            if (selected)
+              Positioned(
+                left: 0,
+                top: 6,
+                bottom: 6,
+                child: Container(width: 2, color: Tok.brand),
+              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: fg),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        color: fg,
+                        fontSize: 13,
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _StatCard extends StatelessWidget {
+class _TopBar extends StatelessWidget {
   final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _StatCard({required this.title, required this.value, required this.icon, required this.color});
+  const _TopBar({required this.title});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(30),
+      height: 60,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       decoration: BoxDecoration(
-        color: const Color(0xFF1A1A1A),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white10),
+        color: Tok.bg,
+        border: Border(bottom: BorderSide(color: Tok.border)),
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-            child: Icon(icon, color: color, size: 36),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Tok.h1),
+              const SizedBox(height: 1),
+              Text('San Francisco, Agusan del Sur',
+                  style: TextStyle(color: Tok.textLo, fontSize: 11)),
+            ],
           ),
-          const SizedBox(width: 24),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(title, style: const TextStyle(color: Colors.white38, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5)),
-                const SizedBox(height: 6),
-                Text(value, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: Colors.white)),
-              ],
-            ),
+          const Spacer(),
+          Consumer<ThemeProvider>(
+            builder: (context, themeProvider, child) {
+              final isDark = themeProvider.isDarkMode;
+              return Tooltip(
+                message: isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode',
+                child: InkWell(
+                  onTap: () {
+                    themeProvider.toggleTheme();
+                  },
+                  borderRadius: BorderRadius.circular(Tok.rMd),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Icon(
+                      isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                      size: 20,
+                      color: Tok.textMid,
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 8),
+          Container(width: 1, height: 22, color: Tok.border),
+          const SizedBox(width: 16),
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Tok.surfaceAlt,
+                  borderRadius: BorderRadius.circular(Tok.rSm),
+                  border: Border.all(color: Tok.border),
+                ),
+                child: Text('C',
+                    style: TextStyle(
+                        color: Tok.textHi, fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+              const SizedBox(width: 10),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Clerk / Encoder',
+                      style: TextStyle(
+                          color: Tok.textHi, fontSize: 12, fontWeight: FontWeight.w600)),
+                  Text('BFP Command', style: TextStyle(color: Tok.textLo, fontSize: 10)),
+                ],
+              ),
+            ],
           ),
         ],
       ),

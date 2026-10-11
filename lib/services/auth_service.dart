@@ -8,6 +8,7 @@ class AuthService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   Future<UserModel?> getUserData(String uid) async {
+    if (uid.trim().isEmpty) return null;
     try {
       final doc = await _db.collection('users').doc(uid).get();
       if (doc.exists) {
@@ -17,6 +18,16 @@ class AuthService {
       print("Error getting user data: $e");
     }
     return null;
+  }
+
+  Future<void> updateUserData(String uid, Map<String, dynamic> data) async {
+    if (uid.trim().isEmpty) return;
+    try {
+      await _db.collection('users').doc(uid).update(data);
+    } catch (e) {
+      print("Error updating user data: $e");
+      rethrow;
+    }
   }
 
   Future<void> signOut() async {

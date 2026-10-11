@@ -11,17 +11,15 @@ plugins {
 android {
     namespace = "com.example.adminpyra"
     compileSdk = flutter.compileSdkVersion
-    
-    // We remove the specific ndkVersion line that was causing the error
-    // and let the system use the default stable version.
+    ndkVersion = "28.2.13676358"
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_11
-        targetCompatibility = JavaVersion.VERSION_11
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_11.toString()
+    kotlin {
+        jvmToolchain(17)
     }
 
     defaultConfig {
@@ -29,10 +27,11 @@ android {
         applicationId = "com.example.adminpyra"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        multiDexEnabled = true
     }
 
     buildTypes {
@@ -43,6 +42,8 @@ android {
         }
     }
 }
+
+
 
 flutter {
     source = "../.."

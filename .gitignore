@@ -3,6 +3,7 @@
 *.log
 *.pyc
 *.swp
+*.exe
 .DS_Store
 .atom/
 .build/
@@ -11,6 +12,7 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+/zsp/
 
 # IntelliJ related
 *.iml

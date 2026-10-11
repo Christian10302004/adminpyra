@@ -1,8 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'dart:convert';
+import 'dart:io';
+
 import '../../services/auth_service.dart';
+import '../../services/web_helper.dart';
+import '../../services/offline_service.dart';
 import '../../models/user_model.dart';
+
+import 'user_theme.dart';
+import 'tabs/dashboard_tab.dart';
+import 'tabs/reports_tab.dart';
+import 'tabs/request_tab.dart';
+import 'tabs/account_tab.dart';
 
 class UserHome extends StatefulWidget {
   const UserHome({super.key});
@@ -15,135 +31,690 @@ class _UserHomeState extends State<UserHome> {
   int _selectedIndex = 0;
 
   @override
+  void initState() {
+    super.initState();
+    OfflineService.syncOfflineData();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
     final User? user = FirebaseAuth.instance.currentUser;
+    final colors = context.colors;
 
     return Scaffold(
+      backgroundColor: colors.bg,
       appBar: AppBar(
-        title: Text(_getTitle()),
-        backgroundColor: Colors.orange.shade900,
-        foregroundColor: Colors.white,
-      ),
-      drawer: Drawer(
-        child: Column(
-          children: [
-            FutureBuilder<UserModel?>(
-              future: authService.getUserData(user?.uid ?? ''),
+        title: Text(_getTitle(), style: Tok.h1.copyWith(color: colors.textHi)),
+        actions: [
+          FutureBuilder<int>(
+            future: OfflineService.getQueueCount(),
+            builder: (context, snapshot) {
+              final count = snapshot.data ?? 0;
+              if (count == 0) return const SizedBox();
+              return IconButton(
+                tooltip: 'Sync offline data',
+                icon: Badge(
+                  label: Text(count.toString()),
+                  backgroundColor: Tok.info,
+                  child: const Icon(Icons.cloud_upload_outlined, size: 20, color: Tok.info),
+                ),
+                onPressed: () async {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Syncing…'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                  await OfflineService.syncOfflineData();
+                  if (mounted) setState(() {});
+                },
+              );
+            },
+          ),
+          IconButton(
+            tooltip: 'Notifications',
+            icon: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('notifications')
+                  .where('uid', isEqualTo: user?.uid)
+                  .where('read', isEqualTo: false)
+                  .snapshots(),
               builder: (context, snapshot) {
-                final userModel = snapshot.data;
-                return UserAccountsDrawerHeader(
-                  decoration: BoxDecoration(color: Colors.orange.shade900),
-                  currentAccountPicture: const CircleAvatar(
-                    backgroundColor: Colors.white,
-                    child: Icon(Icons.person, size: 40, color: Colors.orange),
-                  ),
-                  accountName: Text(userModel?.fullName ?? "Loading..."),
-                  accountEmail: Text(user?.email ?? ""),
+                if (snapshot.hasError) {
+                  return const Icon(Icons.notifications_outlined, size: 20);
+                }
+                final count = snapshot.hasData ? snapshot.data!.docs.length : 0;
+                return Badge(
+                  label: Text(count.toString()),
+                  isLabelVisible: count > 0,
+                  backgroundColor: Tok.brand,
+                  child: const Icon(Icons.notifications_outlined, size: 20),
                 );
               },
             ),
-            ListTile(
-              leading: const Icon(Icons.dashboard),
-              title: const Text('Dashboard'),
-              selected: _selectedIndex == 0,
-              onTap: () {
-                setState(() => _selectedIndex = 0);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.description),
-              title: const Text('My Reports'),
-              selected: _selectedIndex == 1,
-              onTap: () {
-                setState(() => _selectedIndex = 1);
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.add_task),
-              title: const Text('Request Inspection'),
-              selected: _selectedIndex == 2,
-              onTap: () {
-                setState(() => _selectedIndex = 2);
-                Navigator.pop(context);
-              },
-            ),
-            const Spacer(),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout'),
-              onTap: () async {
-                Navigator.pop(context); 
-                await authService.signOut();
-              },
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
+            onPressed: () => _showNotificationsSheet(context, user?.uid ?? ''),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
-      body: _buildBody(),
+      drawer: _UserDrawer(
+        selectedIndex: _selectedIndex,
+        user: user,
+        authService: authService,
+        onSelect: (i) => setState(() => _selectedIndex = i),
+      ),
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: [
+          DashboardTab(
+            onTabRequested: (i) => setState(() => _selectedIndex = i),
+            onViewCertificate: _viewUserCertificate,
+          ),
+          ReportsTab(
+            onTabRequested: (i) => setState(() => _selectedIndex = i),
+            onUploadRequirement: _uploadRequirement,
+            onSubmitRequirements: _submitFinalRequirements,
+            onViewEvidence: (b64) => _showMediaDialog(base64: b64, title: 'Inspection evidence'),
+            onViewCertificate: () {},
+          ),
+          RequestTab(
+            onSubmitted: () => setState(() => _selectedIndex = 0),
+          ),
+          const AccountTab(),
+        ],
+      ),
     );
   }
 
   String _getTitle() {
     switch (_selectedIndex) {
-      case 0: return 'Property Dashboard';
+      case 0: return 'Dashboard';
       case 1: return 'My Reports';
       case 2: return 'New Request';
-      default: return 'User';
+      case 3: return 'Account';
+      default: return 'Dashboard';
     }
   }
 
-  Widget _buildBody() {
-    switch (_selectedIndex) {
-      case 0: return _buildDashboard();
-      case 1: return const Center(child: Text('No reports available yet.'));
-      case 2: return const Center(child: Text('Form to request a new inspection...'));
-      default: return const SizedBox();
+  // ---------------------------------------------------------------------------
+  // Shared logic: uploads, downloads, media
+  // ---------------------------------------------------------------------------
+  Future<void> _uploadRequirement(String docId) async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 25,
+      maxWidth: 1024,
+      maxHeight: 1024,
+    );
+    if (image == null) return;
+
+    try {
+      final bytes = await image.readAsBytes();
+      if (bytes.length > 750000) throw 'Image is too large for database storage.';
+
+      final base64String = base64Encode(bytes);
+      final Map<String, dynamic> payload = {
+        'base64': base64String,
+        'uploaded_at': FieldValue.serverTimestamp(),
+      };
+
+      final connectivity = await Connectivity().checkConnectivity();
+      if (connectivity.contains(ConnectivityResult.none)) {
+        payload['uploaded_at'] = DateTime.now().toIso8601String();
+        await OfflineService.addToQueue('requirement', docId, payload);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Saved locally. Will sync when online.'),
+              backgroundColor: Tok.info,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          setState(() {});
+        }
+      } else {
+        await FirebaseFirestore.instance
+            .collection('inspection_requests')
+            .doc(docId)
+            .collection('files')
+            .add(payload);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Uploaded'),
+              backgroundColor: Tok.ok,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed: $e'),
+            backgroundColor: Tok.danger,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
-  Widget _buildDashboard() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text("Property Overview", style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          const Text("Stay updated on your safety status.", style: TextStyle(color: Colors.grey)),
-          const SizedBox(height: 20),
-          const Card(
-            color: Colors.green,
-            child: Padding(
-              padding: EdgeInsets.all(20),
+  Future<void> _submitFinalRequirements(String docId) async {
+    final Map<String, dynamic> payload = {
+      'status': 'requirements_submitted',
+      'requirements_at': FieldValue.serverTimestamp(),
+    };
+
+    final connectivity = await Connectivity().checkConnectivity();
+    if (connectivity.contains(ConnectivityResult.none)) {
+      payload['requirements_at'] = DateTime.now().toIso8601String();
+      await OfflineService.addToQueue('completion', docId, payload);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Status update queued locally.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else {
+      await FirebaseFirestore.instance
+          .collection('inspection_requests')
+          .doc(docId)
+          .update(payload);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Requirements submitted for review.'),
+            backgroundColor: Tok.ok,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+    if (mounted) setState(() {});
+  }
+
+  void _viewUserCertificate(Map<String, dynamic> data) {
+    final String? base64 = data['certificate_base64'];
+    final String ext = data['certificate_extension'] ?? 'jpg';
+    final String name = data['certificate_filename'] ?? 'fire_safety_certificate';
+    if (base64 == null) return;
+
+    if (ext.toLowerCase() == 'pdf' && !kIsWeb) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: context.colors.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(Tok.rMd),
+            side: BorderSide(color: context.colors.border),
+          ),
+          title: Text('Download PDF?', style: TextStyle(color: context.colors.textHi, fontSize: 16, fontWeight: FontWeight.w600)),
+          content: Text(
+            'This certificate is a PDF file and will be saved to your device.',
+            style: TextStyle(color: context.colors.textMid, fontSize: 13),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              style: TextButton.styleFrom(foregroundColor: context.colors.textMid),
+              child: const Text('Cancel', style: TextStyle(fontSize: 13)),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context);
+                _downloadFile(base64, name, ext);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Tok.brand,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Tok.rSm)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+              child: const Text('Download'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    if (ext.toLowerCase() == 'pdf' && kIsWeb) {
+      openBase64InNewTab(base64, ext);
+    } else {
+      _showMediaDialog(
+        base64: base64,
+        title: name,
+        subtitle: 'Fire Safety Clearance',
+        onDownload: () => _downloadFile(base64, name, ext),
+      );
+    }
+  }
+
+  void _showMediaDialog({
+    required String base64,
+    required String title,
+    String? subtitle,
+    VoidCallback? onDownload,
+  }) {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: context.colors.surface,
+        insetPadding: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tok.rMd),
+          side: BorderSide(color: context.colors.border),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title, style: Tok.h2.copyWith(color: context.colors.textHi)),
+                          if (subtitle != null) ...[
+                            const SizedBox(height: 2),
+                            Text(subtitle, style: Tok.caption.copyWith(color: context.colors.textLo)),
+                          ],
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: Icon(Icons.close_rounded, size: 18, color: context.colors.textMid),
+                      tooltip: 'Close',
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: context.colors.borderSoft),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(Tok.rSm),
+                    child: Image.memory(base64Decode(base64), fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+              if (onDownload != null) ...[
+                Divider(height: 1, color: context.colors.borderSoft),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(foregroundColor: context.colors.textMid),
+                        child: const Text('Close', style: TextStyle(fontSize: 13)),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          onDownload();
+                        },
+                        icon: const Icon(Icons.download_rounded, size: 14),
+                        label: const Text('Download'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Tok.brand,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(Tok.rSm),
+                          ),
+                          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _downloadFile(String base64, String name, String ext) async {
+    if (kIsWeb) {
+      downloadBase64File(base64, name, ext);
+      return;
+    }
+    try {
+      final bytes = base64Decode(base64);
+      Directory? directory;
+      if (Platform.isAndroid) {
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          directory = await getExternalStorageDirectory();
+        }
+      } else {
+        directory = await getApplicationDocumentsDirectory();
+      }
+      if (directory == null) throw 'Could not access storage directory';
+      final filePath = '${directory.path}/$name.$ext';
+      final file = File(filePath);
+      await file.writeAsBytes(bytes);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved to $name.$ext'),
+          backgroundColor: Tok.ok,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $e'),
+          backgroundColor: Tok.danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  void _showNotificationsSheet(BuildContext context, String uid) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: context.colors.surface,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(Tok.rMd)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        minChildSize: 0.4,
+        builder: (context, scrollController) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 6),
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: context.colors.border,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 12, 12),
               child: Row(
                 children: [
-                  Icon(Icons.verified_user, color: Colors.white, size: 40),
-                  SizedBox(width: 20),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("Compliance Status", style: TextStyle(color: Colors.white70)),
-                      Text("SECURE", style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
-                    ],
-                  )
+                  Expanded(
+                    child: Text('Activity alerts', style: Tok.h2.copyWith(color: context.colors.textHi)),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close_rounded, size: 18, color: context.colors.textMid),
+                    tooltip: 'Close',
+                  ),
                 ],
               ),
             ),
+            Divider(height: 1, color: context.colors.borderSoft),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('notifications')
+                    .where('uid', isEqualTo: uid)
+                    .snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text('Error: ${snapshot.error}'));
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final docs = snapshot.data?.docs ?? const [];
+                  if (docs.isEmpty) {
+                    return Center(
+                      child: Text('No notifications yet.', style: TextStyle(color: context.colors.textLo)),
+                    );
+                  }
+                  final sorted = docs.toList()
+                    ..sort((a, b) {
+                      final aT = (a.data() as Map)['timestamp'] as Timestamp?;
+                      final bT = (b.data() as Map)['timestamp'] as Timestamp?;
+                      if (aT == null) return 1;
+                      if (bT == null) return -1;
+                      return bT.compareTo(aT);
+                    });
+                  return ListView.separated(
+                    controller: scrollController,
+                    padding: EdgeInsets.zero,
+                    itemCount: sorted.length,
+                    separatorBuilder: (_, __) => Divider(height: 1, color: context.colors.borderSoft, indent: 20, endIndent: 20),
+                    itemBuilder: (context, index) {
+                      final doc = sorted[index];
+                      final data = doc.data() as Map<String, dynamic>;
+                      final unread = data['read'] != true;
+                      return InkWell(
+                        onTap: () => FirebaseFirestore.instance.collection('notifications').doc(doc.id).update({'read': true}),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                          color: unread ? context.colors.surfaceAlt.withValues(alpha: 0.5) : null,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 8, height: 8,
+                                margin: const EdgeInsets.only(top: 6, right: 12),
+                                decoration: BoxDecoration(
+                                  color: unread ? Tok.brand : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(2),
+                                ),
+                              ),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      data['title'] ?? '',
+                                      style: Tok.body.copyWith(
+                                        color: context.colors.textHi,
+                                        fontWeight: unread ? FontWeight.w600 : FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      data['message'] ?? '',
+                                      style: Tok.bodySm.copyWith(color: context.colors.textMid),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Top-level sign-out dialog (accessible from any widget).
+// ---------------------------------------------------------------------------
+void showLogoutConfirmationDialog(BuildContext context, AuthService authService) {
+  showDialog(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        title: const Text('Sign out?'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
           ),
-          const SizedBox(height: 20),
-          const Text("Latest Activity", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 10),
-          const ListTile(
-            leading: CircleAvatar(child: Icon(Icons.check)),
-            title: Text("Annual Fire Check"),
-            subtitle: Text("Completed on Oct 12, 2024"),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await authService.signOut();
+            },
+            child: const Text('Sign out'),
           ),
         ],
+      );
+    },
+  );
+}
+
+class _UserDrawer extends StatelessWidget {
+  final int selectedIndex;
+  final User? user;
+  final AuthService authService;
+  final ValueChanged<int> onSelect;
+
+  const _UserDrawer({
+    required this.selectedIndex,
+    required this.user,
+    required this.authService,
+    required this.onSelect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return Drawer(
+      backgroundColor: colors.surface,
+      shape: const RoundedRectangleBorder(side: BorderSide.none),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FutureBuilder<UserModel?>(
+              future: authService.getUserData(user?.uid ?? ''),
+              builder: (context, snapshot) {
+                final userModel = snapshot.data;
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 40, height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: colors.surfaceAlt,
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          border: Border.all(color: colors.border),
+                          image: userModel?.profilePicBase64 != null
+                              ? DecorationImage(
+                            image: MemoryImage(base64Decode(userModel!.profilePicBase64!)),
+                            fit: BoxFit.cover,
+                          )
+                              : null,
+                        ),
+                        child: userModel?.profilePicBase64 == null
+                            ? Text(
+                          getInitials(userModel?.fullName ?? 'U'),
+                          style: TextStyle(color: colors.textHi, fontSize: 14, fontWeight: FontWeight.w600),
+                        )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(userModel?.fullName ?? 'Loading…', style: Tok.h3.copyWith(color: colors.textHi), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 2),
+                            Text(user?.email ?? '', style: Tok.caption.copyWith(color: colors.textLo), maxLines: 1, overflow: TextOverflow.ellipsis),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            Divider(height: 1, color: colors.borderSoft),
+            const SizedBox(height: 8),
+            _DrawerItem(icon: Icons.dashboard_outlined, label: 'Dashboard', selected: selectedIndex == 0, onTap: () { onSelect(0); Navigator.pop(context); }),
+            _DrawerItem(icon: Icons.description_outlined, label: 'My reports', selected: selectedIndex == 1, onTap: () { onSelect(1); Navigator.pop(context); }),
+            _DrawerItem(icon: Icons.add_task_rounded, label: 'Request inspection', selected: selectedIndex == 2, onTap: () { onSelect(2); Navigator.pop(context); }),
+            _DrawerItem(icon: Icons.settings_outlined, label: 'Account', selected: selectedIndex == 3, onTap: () { onSelect(3); Navigator.pop(context); }),
+            const Spacer(),
+            Divider(height: 1, color: colors.borderSoft),
+            _DrawerItem(
+              icon: Icons.logout_rounded,
+              label: 'Sign out',
+              destructive: true,
+              onTap: () {
+                Navigator.pop(context);
+                showLogoutConfirmationDialog(context, authService);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final bool destructive;
+  final VoidCallback onTap;
+  const _DrawerItem({required this.icon, required this.label, required this.onTap, this.selected = false, this.destructive = false});
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final Color fg = selected ? colors.textHi : destructive ? Tok.danger : colors.textMid;
+    return Material(
+      color: selected ? colors.surfaceAlt : Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Stack(
+          children: [
+            if (selected) Positioned(left: 0, top: 6, bottom: 6, child: Container(width: 2, color: Tok.brand)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Row(
+                children: [
+                  Icon(icon, size: 18, color: fg),
+                  const SizedBox(width: 14),
+                  Expanded(child: Text(label, style: TextStyle(color: fg, fontSize: 14, fontWeight: selected ? FontWeight.w600 : FontWeight.w500))),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
