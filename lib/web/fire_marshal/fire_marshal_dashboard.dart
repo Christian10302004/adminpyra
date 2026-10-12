@@ -130,19 +130,6 @@ class _Sidebar extends StatelessWidget {
           _NavTile(icon: Icons.verified_user_outlined, title: titles[2], selected: selectedIndex == 2, onTap: () => onSelect(2)),
           const Spacer(),
           Divider(height: 1, color: Tok.borderSoft),
-          Consumer<ThemeProvider>(
-            builder: (context, themeProvider, child) {
-              final isDark = themeProvider.isDarkMode;
-              return _NavTile(
-                icon: isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                title: isDark ? 'Light Mode' : 'Dark Mode',
-                selected: false,
-                onTap: () {
-                  themeProvider.toggleTheme();
-                },
-              );
-            },
-          ),
           _NavTile(icon: Icons.logout_rounded, title: 'Sign out', selected: false, onTap: onLogout),
           const SizedBox(height: 12),
         ],

@@ -7,7 +7,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 import 'admin_theme.dart';
 
-// Role definitions — single source of truth for label, icon, color, description.
+// ─── Role definitions ────────────────────────────────────────────────────────
 class _Role {
   final String value;
   final String label;
@@ -74,6 +74,10 @@ class _Role {
       orElse: () => all.first,
     );
   }
+
+  /// Returns true if this role is a "PyraCheck app user" (mobile citizen).
+  static bool isPyraUser(String? v) =>
+      (v ?? '').toLowerCase() == 'user';
 }
 
 class ManageUsersView extends StatefulWidget {
@@ -86,7 +90,7 @@ class ManageUsersView extends StatefulWidget {
 class _ManageUsersViewState extends State<ManageUsersView> {
   final _firestore = FirebaseFirestore.instance;
   final _searchController = TextEditingController();
-  String? _roleFilter; // null = all
+  String? _roleFilter;
 
   @override
   void dispose() {
@@ -101,7 +105,7 @@ class _ManageUsersViewState extends State<ManageUsersView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Header row with search and actions
+          // Top bar: search + filter + add
           Row(
             children: [
               Expanded(
@@ -125,7 +129,8 @@ class _ManageUsersViewState extends State<ManageUsersView> {
                         color: Tok.textLo,
                       ),
                       border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      contentPadding:
+                      const EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
                 ),
@@ -144,8 +149,8 @@ class _ManageUsersViewState extends State<ManageUsersView> {
                   backgroundColor: Tok.brand,
                   foregroundColor: Colors.white,
                   elevation: 0,
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(Tok.rMd),
                   ),
@@ -157,96 +162,99 @@ class _ManageUsersViewState extends State<ManageUsersView> {
           ),
           const SizedBox(height: 24),
 
-          // User table
+          // Two panels
           Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Tok.surface,
-                borderRadius: BorderRadius.circular(Tok.rLg),
-                border: Border.all(color: Tok.border),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore.collection('users').snapshots(),
-                builder: (context, snapshot) {
-                  if (snapshot.hasError) {
-                    return const EmptyState(
-                      icon: Icons.error_outline,
-                      label: 'Error loading users',
-                    );
-                  }
-                  if (!snapshot.hasData) {
-                    return Center(
-                      child: SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Tok.textLo,
-                        ),
-                      ),
-                    );
-                  }
-
-                  var docs = snapshot.data!.docs;
-
-                  // Apply search and filters in memory for faster feedback
-                  if (_searchController.text.isNotEmpty) {
-                    final q = _searchController.text.toLowerCase();
-                    docs = docs.where((d) {
-                      final data = d.data() as Map<String, dynamic>;
-                      return (data['full_name'] ?? '')
-                          .toString()
-                          .toLowerCase()
-                          .contains(q) ||
-                          (data['email'] ?? '')
-                              .toString()
-                              .toLowerCase()
-                              .contains(q) ||
-                          (data['account_id'] ?? '')
-                              .toString()
-                              .toLowerCase()
-                              .contains(q);
-                    }).toList();
-                  }
-
-                  if (_roleFilter != null) {
-                    docs = docs.where((d) {
-                      final role = (d.data() as Map<String, dynamic>)['role']
-                          ?.toString()
-                          .toLowerCase();
-                      return role == _roleFilter!.toLowerCase();
-                    }).toList();
-                  }
-
-                  return Column(
-                    children: [
-                      _TableHeader(count: docs.length),
-                      Divider(height: 1, color: Tok.borderSoft),
-                      Expanded(
-                        child: docs.isEmpty
-                            ? const EmptyState(
-                          icon: Icons.people_outline,
-                          label: 'No matching records',
-                        )
-                            : ListView.separated(
-                          itemCount: docs.length,
-                          separatorBuilder: (_, __) => Divider(
-                            height: 1,
-                            color: Tok.borderSoft,
-                          ),
-                          itemBuilder: (context, i) => _UserRow(
-                            docId: docs[i].id,
-                            data:
-                            docs[i].data() as Map<String, dynamic>,
-                            onRefresh: () => setState(() {}),
-                          ),
-                        ),
-                      ),
-                    ],
+            child: StreamBuilder<QuerySnapshot>(
+              stream: _firestore.collection('users').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const EmptyState(
+                    icon: Icons.error_outline,
+                    label: 'Error loading users',
                   );
-                },
-              ),
+                }
+                if (!snapshot.hasData) {
+                  return Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Tok.textLo,
+                      ),
+                    ),
+                  );
+                }
+
+                var docs = snapshot.data!.docs;
+
+                // Search filter
+                if (_searchController.text.isNotEmpty) {
+                  final q = _searchController.text.toLowerCase();
+                  docs = docs.where((d) {
+                    final data = d.data() as Map<String, dynamic>;
+                    return (data['full_name'] ?? '')
+                        .toString()
+                        .toLowerCase()
+                        .contains(q) ||
+                        (data['email'] ?? '')
+                            .toString()
+                            .toLowerCase()
+                            .contains(q) ||
+                        (data['account_id'] ?? '')
+                            .toString()
+                            .toLowerCase()
+                            .contains(q);
+                  }).toList();
+                }
+
+                // Role filter
+                if (_roleFilter != null) {
+                  docs = docs.where((d) {
+                    final role = (d.data() as Map<String, dynamic>)['role']
+                        ?.toString()
+                        .toLowerCase();
+                    return role == _roleFilter!.toLowerCase();
+                  }).toList();
+                }
+
+                // Split into Pyra Users (left) and Web/Staff Users (right)
+                final pyraUsers = docs
+                    .where((d) => _Role.isPyraUser(
+                    (d.data() as Map<String, dynamic>)['role']?.toString()))
+                    .toList();
+                final webUsers = docs
+                    .where((d) => !_Role.isPyraUser(
+                    (d.data() as Map<String, dynamic>)['role']?.toString()))
+                    .toList();
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // LEFT: PyraCheck Users only
+                    Expanded(
+                      child: _UserPanel(
+                        title: 'PyraCheck Users',
+                        icon: Icons.smartphone_outlined,
+                        iconColor: Tok.ok,
+                        docs: pyraUsers,
+                        onRefresh: () => setState(() {}),
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    // RIGHT: Web / Staff Users
+                    Expanded(
+                      child: _UserPanel(
+                        title: 'Web Users',
+                        icon: Icons.language_outlined,
+                        iconColor: Tok.info,
+                        docs: webUsers,
+                        onRefresh: () => setState(() {}),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -262,38 +270,107 @@ class _ManageUsersViewState extends State<ManageUsersView> {
   }
 }
 
-class _TableHeader extends StatelessWidget {
-  final int count;
-  const _TableHeader({required this.count});
+// ─── User Panel (the "box") ──────────────────────────────────────────────────
+class _UserPanel extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color iconColor;
+  final List<QueryDocumentSnapshot> docs;
+  final VoidCallback onRefresh;
+
+  const _UserPanel({
+    required this.title,
+    required this.icon,
+    required this.iconColor,
+    required this.docs,
+    required this.onRefresh,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: Tok.surfaceAlt,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      child: Row(
+      decoration: BoxDecoration(
+        color: Tok.surface,
+        borderRadius: BorderRadius.circular(Tok.rLg),
+        border: Border.all(color: Tok.border),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            flex: 4,
-            child: Text('NAME & IDENTITY', style: Tok.label),
+          // Panel header
+          Container(
+            color: Tok.surfaceAlt,
+            padding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: iconColor),
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: Tok.body.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const Spacer(),
+                Text(
+                  'Total: ${docs.length}',
+                  style: Tok.label.copyWith(color: Tok.textMid),
+                ),
+              ],
+            ),
           ),
-          Expanded(
-            flex: 3,
-            child: Text('ASSIGNED ROLE', style: Tok.label),
+          Divider(height: 1, color: Tok.borderSoft),
+
+          // Column header
+          Container(
+            color: Tok.surfaceAlt.withValues(alpha: 0.5),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 4,
+                  child: Text('USER', style: Tok.label),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: Text('ROLE', style: Tok.label),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Text('STATUS', style: Tok.label),
+                ),
+                SizedBox(width: 80, child: Text('ACTION', style: Tok.label)),
+              ],
+            ),
           ),
+          Divider(height: 1, color: Tok.borderSoft),
+
+          // Rows
           Expanded(
-            flex: 2,
-            child: Text('STATUS', style: Tok.label),
+            child: docs.isEmpty
+                ? const EmptyState(
+              icon: Icons.people_outline,
+              label: 'No matching records',
+            )
+                : ListView.separated(
+              itemCount: docs.length,
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: Tok.borderSoft),
+              itemBuilder: (context, i) => _UserRow(
+                docId: docs[i].id,
+                data: docs[i].data() as Map<String, dynamic>,
+                onRefresh: onRefresh,
+              ),
+            ),
           ),
-          const SizedBox(width: 80),
-          Text('$count total',
-              style: Tok.label.copyWith(color: Tok.textMid)),
         ],
       ),
     );
   }
 }
 
+// ─── User Row ────────────────────────────────────────────────────────────────
 class _UserRow extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
@@ -329,7 +406,7 @@ class _UserRowState extends State<_UserRow> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
         child: Row(
           children: [
-            // Name & Info
+            // Name & Identity
             Expanded(
               flex: 4,
               child: Row(
@@ -359,8 +436,8 @@ class _UserRowState extends State<_UserRow> {
                       children: [
                         Text(
                           widget.data['full_name'] ?? 'Unnamed',
-                          style: Tok.body.copyWith(
-                              fontWeight: FontWeight.w500),
+                          style: Tok.body
+                              .copyWith(fontWeight: FontWeight.w500),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -391,20 +468,24 @@ class _UserRowState extends State<_UserRow> {
                     decoration: BoxDecoration(
                       color: role.color.withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(Tok.rSm),
-                      border:
-                      Border.all(color: role.color.withValues(alpha: 0.3)),
+                      border: Border.all(
+                          color: role.color.withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(role.icon, size: 14, color: role.color),
                         const SizedBox(width: 8),
-                        Text(
-                          role.label,
-                          style: TextStyle(
-                            color: role.color,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
+                        Flexible(
+                          child: Text(
+                            role.label,
+                            style: TextStyle(
+                              color: role.color,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -460,6 +541,7 @@ class _UserRowState extends State<_UserRow> {
   }
 }
 
+// ─── Row Actions ─────────────────────────────────────────────────────────────
 class _RowActions extends StatelessWidget {
   final String docId;
   final String currentRole;
@@ -557,6 +639,7 @@ class _ActionButton extends StatelessWidget {
   }
 }
 
+// ─── Role Filter ─────────────────────────────────────────────────────────────
 class _RoleFilter extends StatelessWidget {
   final String? current;
   final ValueChanged<String?> onChanged;
@@ -603,6 +686,7 @@ class _RoleFilter extends StatelessWidget {
   }
 }
 
+// ─── Role Picker ─────────────────────────────────────────────────────────────
 class _RolePicker extends StatelessWidget {
   final String current;
   final ValueChanged<String> onSelect;
@@ -618,87 +702,80 @@ class _RolePicker extends StatelessWidget {
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 440),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Assign User Role',
-                    style: TextStyle(
-                      color: Tok.textHi,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Assign User Role',
+                style: TextStyle(
+                  color: Tok.textHi,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Elevating a user\'s role changes their access level in the PyraCheck ecosystem.',
+                style: TextStyle(color: Tok.textLo, fontSize: 13),
+              ),
+              const SizedBox(height: 24),
+              ..._Role.all.map((r) {
+                final selected =
+                    current.toLowerCase() == r.value.toLowerCase();
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? r.color.withValues(alpha: 0.05)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(Tok.rMd),
+                    border: Border.all(
+                      color: selected
+                          ? r.color.withValues(alpha: 0.4)
+                          : Tok.borderSoft,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Elevating a user\'s role changes their access level in the PyraCheck ecosystem.',
-                    style: TextStyle(color: Tok.textLo, fontSize: 13),
+                  child: ListTile(
+                    onTap: () => onSelect(r.value),
+                    leading: Icon(
+                      r.icon,
+                      color: selected ? r.color : Tok.textLo,
+                    ),
+                    title: Text(
+                      r.label,
+                      style: Tok.body.copyWith(
+                        fontWeight:
+                        selected ? FontWeight.w600 : FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      r.description,
+                      style: Tok.bodySm.copyWith(
+                        color: Tok.textLo,
+                        fontSize: 11,
+                      ),
+                    ),
+                    trailing: selected
+                        ? Icon(
+                      Icons.check_circle_rounded,
+                      size: 18,
+                      color: r.color,
+                    )
+                        : null,
                   ),
-                  const SizedBox(height: 24),
-                  ..._Role.all.map((r) {
-                    final selected =
-                        current.toLowerCase() == r.value.toLowerCase();
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: selected
-                            ? r.color.withValues(alpha: 0.05)
-                            : Colors.transparent,
-                        borderRadius: BorderRadius.circular(Tok.rMd),
-                        border: Border.all(
-                          color: selected
-                              ? r.color.withValues(alpha: 0.4)
-                              : Tok.borderSoft,
-                        ),
-                      ),
-                      child: ListTile(
-                        onTap: () => onSelect(r.value),
-                        leading: Icon(
-                          r.icon,
-                          color: selected ? r.color : Tok.textLo,
-                        ),
-                        title: Text(
-                          r.label,
-                          style: Tok.body.copyWith(
-                            fontWeight:
-                            selected ? FontWeight.w600 : FontWeight.w500,
-                          ),
-                        ),
-                        subtitle: Text(
-                          r.description,
-                          style: Tok.bodySm.copyWith(
-                            color: Tok.textLo,
-                            fontSize: 11,
-                          ),
-                        ),
-                        trailing: selected
-                            ? Icon(
-                          Icons.check_circle_rounded,
-                          size: 18,
-                          color: r.color,
-                        )
-                            : null,
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ),
-          ],
+                );
+              }),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ---------------------------------------------------------------------------
-// ADD USER DIALOG
-// ---------------------------------------------------------------------------
+// ─── Add User Dialog ─────────────────────────────────────────────────────────
 class _AddUserDialog extends StatefulWidget {
   const _AddUserDialog();
   @override
@@ -725,7 +802,6 @@ class _AddUserDialogState extends State<_AddUserDialog> {
     });
 
     try {
-      // Create second Firebase app to avoid logging out current admin
       FirebaseApp tempApp = await Firebase.initializeApp(
         name: 'temp',
         options: Firebase.app().options,
@@ -811,7 +887,7 @@ class _AddUserDialogState extends State<_AddUserDialog> {
               const SizedBox(height: 8),
               _RoleFilter(
                 current: _role,
-                onChanged: (v) => setState(() => _role = v!),
+                onChanged: (v) => setState(() => _role = v ?? 'User'),
               ),
               const SizedBox(height: 32),
               Row(

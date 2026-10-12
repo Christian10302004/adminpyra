@@ -131,19 +131,6 @@ class _Sidebar extends StatelessWidget {
           _NavTile(icon: Icons.assignment_outlined, title: titles[1], selected: selectedIndex == 1, onTap: () => onSelect(1)),
           const Spacer(),
           Divider(height: 1, color: Tok.borderSoft),
-          Consumer<ThemeProvider>(
-            builder: (context, themeProvider, child) {
-              final isDark = themeProvider.isDarkMode;
-              return _NavTile(
-                icon: isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                title: isDark ? 'Light Mode' : 'Dark Mode',
-                selected: false,
-                onTap: () {
-                  themeProvider.toggleTheme();
-                },
-              );
-            },
-          ),
           _NavTile(icon: Icons.logout_rounded, title: 'Sign out', selected: false, onTap: onLogout),
           const SizedBox(height: 12),
         ],
@@ -224,7 +211,7 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 8),
           Container(width: 1, height: 22, color: Tok.border),
           const SizedBox(width: 16),
-          Row(children: [Container(width: 26, height: 26, alignment: Alignment.center, decoration: BoxDecoration(color: Tok.surfaceAlt, borderRadius: BorderRadius.circular(Tok.rSm), border: Border.all(color: Tok.border)), child: Text('R', style: TextStyle(color: Tok.textHi, fontSize: 12, fontWeight: FontWeight.w600))), const SizedBox(width: 10), Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Text('Establishment Rep', style: TextStyle(color: Tok.textHi, fontSize: 12, fontWeight: FontWeight.w600)), Text('BFP Command', style: TextStyle(color: Tok.textLo, fontSize: 10))])]),
+          Row(children: [Container(width: 26, height: 26, alignment: Alignment.center, decoration: BoxDecoration(color: Tok.surfaceAlt, borderRadius: BorderRadius.circular(Tok.rSm), border: Border.all(color: Tok.border)), child: Text('R', style: TextStyle(color: Tok.textHi, fontSize: 12, fontWeight: FontWeight.w600))), const SizedBox(width: 10), Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Text('Establishment Rep', style: TextStyle(color: Tok.textHi, fontSize: 12, fontWeight: FontWeight.w600)), Text('BFP Command', style: TextStyle(color: Tok.textLo, fontSize: 10))])]), // ← no trailing comma issue
         ],
       ),
     );

@@ -446,21 +446,6 @@ class _Sidebar extends StatelessWidget {
 
           const Spacer(),
           Divider(height: 1, color: Tok.borderSoft),
-          Consumer<ThemeProvider>(
-            builder: (context, themeProvider, child) {
-              final isDark = themeProvider.isDarkMode;
-              return _NavTile(
-                icon: isDark
-                    ? Icons.light_mode_outlined
-                    : Icons.dark_mode_outlined,
-                title: isDark ? 'Light Mode' : 'Dark Mode',
-                onTap: () {
-                  themeProvider.toggleTheme();
-                },
-                selected: false,
-              );
-            },
-          ),
           _NavTile(
             icon: Icons.logout_rounded,
             title: 'Log out',
