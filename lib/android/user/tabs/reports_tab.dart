@@ -3,9 +3,11 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:printing/printing.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
+import '../../../services/web_helper.dart';
 import '../user_theme.dart';
 
 class ReportsTab extends StatelessWidget {
@@ -138,13 +140,25 @@ class _ReportTile extends StatelessWidget {
   }
 
   void _showCertificateModal(BuildContext context) {
+    final String? base64 = data['certificate_base64'];
+    if (base64 == null || base64.isEmpty) return;
+
+    final String ext = (data['certificate_extension'] ?? 'pdf').toString().toLowerCase();
+    String fileName = (data['certificate_filename'] ?? '').toString();
+    if (fileName.isEmpty) {
+      final propName = (data['property_name'] ?? 'Inspection').toString().replaceAll(' ', '_');
+      fileName = 'Certificate_$propName.$ext';
+    } else if (!fileName.toLowerCase().endsWith('.$ext') && !fileName.toLowerCase().endsWith('.pdf')) {
+      fileName = '$fileName.$ext';
+    }
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _CertificateModal(
-        base64Data: data['certificate_base64'],
-        fileName: 'Certificate_${data['property_name'] ?? 'Inspection'}.pdf', // Default name
+      builder: (context) => CertificateModal(
+        base64Data: base64,
+        fileName: fileName,
       ),
     );
   }
@@ -288,13 +302,14 @@ class _ReportTile extends StatelessWidget {
 }
 
 // ===========================================================================
-// Certificate Modal (New Widget)
+// Certificate Modal
 // ===========================================================================
-class _CertificateModal extends StatelessWidget {
+class CertificateModal extends StatelessWidget {
   final String base64Data;
   final String fileName;
 
-  const _CertificateModal({
+  const CertificateModal({
+    super.key,
     required this.base64Data,
     required this.fileName,
   });
@@ -310,18 +325,26 @@ class _CertificateModal extends StatelessWidget {
     } catch (e) {
       return Container(
         height: 300,
-        color: colors.bg,
-        child: const Center(child: Text("Error: Invalid certificate data")),
+        decoration: BoxDecoration(
+          color: colors.bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        child: Center(
+          child: Text(
+            "Error: Invalid certificate data",
+            style: Tok.body.copyWith(color: colors.textMid),
+          ),
+        ),
       );
     }
 
-    // 2. Detect if it's a PDF (checking magic numbers)
-    // PDF files start with %PDF (0x25 0x50 0x44 0x46)
-    bool isPdf = bytes.length > 4 &&
-        bytes[0] == 0x25 &&
-        bytes[1] == 0x50 &&
-        bytes[2] == 0x44 &&
-        bytes[3] == 0x46;
+    // 2. Detect if it's a PDF (checking magic numbers or extension)
+    bool isPdf = (bytes.length > 4 &&
+            bytes[0] == 0x25 &&
+            bytes[1] == 0x50 &&
+            bytes[2] == 0x44 &&
+            bytes[3] == 0x46) ||
+        fileName.toLowerCase().endsWith('.pdf');
 
     return Container(
       height: MediaQuery.of(context).size.height * 0.85, // 85% of screen height
@@ -333,86 +356,98 @@ class _CertificateModal extends StatelessWidget {
         children: [
           // Header
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               border: Border(bottom: BorderSide(color: colors.borderSoft)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  "Certificate",
-                  style: Tok.h3.copyWith(color: colors.textHi),
+                Expanded(
+                  child: Text(
+                    fileName.isNotEmpty ? fileName : "Certificate",
+                    style: Tok.h3.copyWith(color: colors.textHi),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
                 IconButton(
                   icon: Icon(Icons.close, color: colors.textMid),
                   onPressed: () => Navigator.pop(context),
+                  tooltip: 'Close',
                 ),
               ],
             ),
           ),
 
-          // Content
+          // Content - View PDF or Image
           Expanded(
             child: isPdf
-                ? _PdfViewerPlaceholder(
-              onOpen: () async {
-                // Save to temp file and open with external app
-                final tempDir = await getTemporaryDirectory();
-                final file = File('${tempDir.path}/$fileName');
-                await file.writeAsBytes(bytes);
-
-                final uri = Uri.file(file.path);
-                if (await canLaunchUrl(uri)) {
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-                } else {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Could not open PDF viewer")),
-                    );
-                  }
-                }
-              },
-            )
+                ? ClipRRect(
+                    child: PdfPreview(
+                      build: (format) => bytes,
+                      useActions: false,
+                      canChangePageFormat: false,
+                      canChangeOrientation: false,
+                      canDebug: false,
+                      maxPageWidth: 700,
+                      loadingWidget: Center(
+                        child: CircularProgressIndicator(
+                          color: colors.textLo,
+                          strokeWidth: 2,
+                        ),
+                      ),
+                      onError: (context, error) => Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text(
+                            "Could not render PDF: $error",
+                            style: Tok.bodySm.copyWith(color: colors.textMid),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
                 : InteractiveViewer(
-              child: Image.memory(
-                bytes,
-                fit: BoxFit.contain,
-              ),
-            ),
+                    child: Center(
+                      child: Image.memory(
+                        bytes,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.broken_image_outlined,
+                                size: 48,
+                                color: colors.textLo,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                "Unable to display image preview",
+                                style:
+                                    Tok.bodySm.copyWith(color: colors.textMid),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
           ),
 
           // Footer / Download Button
           Container(
             padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              border: Border(top: BorderSide(color: colors.borderSoft)),
+            ),
             child: SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton.icon(
-                onPressed: () async {
-                  final tempDir = await getTemporaryDirectory();
-                  // Note: Saving to Downloads requires permission_handler on Android.
-                  // For simplicity, we save to temp and let user share/open.
-                  final file = File('${tempDir.path}/$fileName');
-                  await file.writeAsBytes(bytes);
-
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text("Saved to: ${file.path}"),
-                        action: SnackBarAction(
-                          label: "Open",
-                          onPressed: () async {
-                            final uri = Uri.file(file.path);
-                            if (await canLaunchUrl(uri)) {
-                              await launchUrl(uri, mode: LaunchMode.externalApplication);
-                            }
-                          },
-                        ),
-                      ),
-                    );
-                  }
-                },
+                onPressed: () => _downloadOrSaveFile(context, bytes, fileName),
                 icon: const Icon(Icons.download_rounded),
                 label: const Text("Download / Save"),
                 style: ElevatedButton.styleFrom(
@@ -420,6 +455,10 @@ class _CertificateModal extends StatelessWidget {
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(Tok.rSm),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -429,43 +468,81 @@ class _CertificateModal extends StatelessWidget {
       ),
     );
   }
-}
 
-class _PdfViewerPlaceholder extends StatelessWidget {
-  final Future<void> Function() onOpen;
-  const _PdfViewerPlaceholder({required this.onOpen});
+  Future<void> _downloadOrSaveFile(
+      BuildContext context, Uint8List bytes, String fileName) async {
+    if (kIsWeb) {
+      final base64Str = base64Encode(bytes);
+      final ext = fileName.contains('.') ? fileName.split('.').last : 'pdf';
+      final nameWithoutExt = fileName.contains('.')
+          ? fileName.substring(0, fileName.lastIndexOf('.'))
+          : fileName;
+      downloadBase64File(base64Str, nameWithoutExt, ext);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloading $fileName...'),
+            backgroundColor: Tok.ok,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
 
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.colors;
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.picture_as_pdf, size: 64, color: colors.textLo),
-          const SizedBox(height: 16),
-          Text(
-            "PDF Document",
-            style: Tok.h3.copyWith(color: colors.textHi),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            "Preview not available in-app.",
-            style: Tok.bodySm.copyWith(color: colors.textMid),
-          ),
-          const SizedBox(height: 24),
-          ElevatedButton.icon(
-            onPressed: onOpen,
-            icon: const Icon(Icons.open_in_new),
-            label: const Text("Open in Viewer"),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Tok.brand,
-              foregroundColor: Colors.white,
+    try {
+      Directory? directory;
+      if (Platform.isAndroid) {
+        directory = Directory('/storage/emulated/0/Download');
+        if (!await directory.exists()) {
+          directory = await getExternalStorageDirectory();
+        }
+      } else {
+        directory = await getApplicationDocumentsDirectory();
+      }
+
+      if (directory == null) {
+        throw 'Could not access storage directory';
+      }
+
+      final safeName = fileName.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final filePath = '${directory.path}/$safeName';
+      final file = File(filePath);
+      await file.writeAsBytes(bytes);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Saved to Downloads: $safeName'),
+            backgroundColor: Tok.ok,
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Share',
+              textColor: Colors.white,
+              onPressed: () async {
+                try {
+                  await Printing.sharePdf(bytes: bytes, filename: safeName);
+                } catch (_) {}
+              },
             ),
           ),
-        ],
-      ),
-    );
+        );
+      }
+    } catch (e) {
+      try {
+        await Printing.sharePdf(bytes: bytes, filename: fileName);
+      } catch (e2) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Download failed: $e'),
+              backgroundColor: Tok.danger,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    }
   }
 }
 
@@ -677,7 +754,7 @@ class _RequirementUpload extends StatelessWidget {
                   style: Tok.h3.copyWith(color: colors.textHi)),
               const SizedBox(height: 4),
               Text(
-                'Upload up to 5 photos. Max 1 MB each.',
+                'Upload up to 5 photos or files. Max 1 MB each.',
                 style: Tok.caption.copyWith(color: colors.textLo),
               ),
               const SizedBox(height: 12),
@@ -687,15 +764,60 @@ class _RequirementUpload extends StatelessWidget {
                 children: [
                   ...docs.map((doc) {
                     final data = doc.data() as Map<String, dynamic>;
+                    final base64Str = (data['base64'] ?? '').toString();
+                    final fileName = (data['name'] ?? data['file_name'] ?? 'Document').toString();
+
+                    Uint8List? bytes;
+                    try {
+                      if (base64Str.isNotEmpty) {
+                        bytes = base64Decode(base64Str);
+                      }
+                    } catch (_) {}
+
+                    final isPdf = bytes != null &&
+                        bytes.length > 4 &&
+                        bytes[0] == 0x25 &&
+                        bytes[1] == 0x50 &&
+                        bytes[2] == 0x44 &&
+                        bytes[3] == 0x46;
+
                     return Stack(
                       children: [
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(Tok.rSm),
-                          child: Image.memory(
-                            base64Decode(data['base64']),
-                            width: 60,
-                            height: 60,
-                            fit: BoxFit.cover,
+                        GestureDetector(
+                          onTap: () {
+                            if (base64Str.isNotEmpty) {
+                              showModalBottomSheet(
+                                context: context,
+                                isScrollControlled: true,
+                                backgroundColor: Colors.transparent,
+                                builder: (context) => CertificateModal(
+                                  base64Data: base64Str,
+                                  fileName: fileName,
+                                ),
+                              );
+                            }
+                          },
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(Tok.rSm),
+                            child: Container(
+                              width: 60,
+                              height: 60,
+                              decoration: BoxDecoration(
+                                color: colors.bg,
+                                borderRadius: BorderRadius.circular(Tok.rSm),
+                                border: Border.all(color: colors.borderSoft),
+                              ),
+                              child: (bytes != null && !isPdf)
+                                  ? Image.memory(
+                                      bytes,
+                                      width: 60,
+                                      height: 60,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          _buildFileThumbnail(colors, isPdf, fileName),
+                                    )
+                                  : _buildFileThumbnail(colors, isPdf, fileName),
+                            ),
                           ),
                         ),
                         Positioned(
@@ -753,10 +875,25 @@ class _RequirementUpload extends StatelessWidget {
                           borderRadius: BorderRadius.circular(Tok.rSm),
                           border: Border.all(color: colors.border),
                         ),
-                        child: Icon(
-                          Icons.add_a_photo_outlined,
-                          color: colors.textMid,
-                          size: 20,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.add_a_photo_outlined,
+                              color: colors.textMid,
+                              size: 18,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Photo/File',
+                              style: TextStyle(
+                                fontSize: 8,
+                                color: colors.textMid,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -787,6 +924,30 @@ class _RequirementUpload extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildFileThumbnail(dynamic colors, bool isPdf, String fileName) {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(
+          isPdf ? Icons.picture_as_pdf_outlined : Icons.insert_drive_file_outlined,
+          size: 20,
+          color: isPdf ? Tok.danger : colors.textMid,
+        ),
+        const SizedBox(height: 2),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2),
+          child: Text(
+            fileName,
+            style: TextStyle(fontSize: 8, color: colors.textMid),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ],
     );
   }
 }

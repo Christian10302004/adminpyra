@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../../services/textbee_service.dart';
+import '../../services/web_helper.dart';
 import 'admin_theme.dart';
 
 // Filter options: display label ↔ underlying Firestore status value.
@@ -871,6 +872,8 @@ class _InspectionDetailsDialog extends StatelessWidget {
                             final b64 = (m['base64'] ?? '').toString();
                             final name = (m['name'] ?? 'Requirement Document').toString();
                             if (b64.isEmpty) return const SizedBox.shrink();
+                            final isPdf = _isPdfData(b64, name);
+
                             return InkWell(
                               onTap: () => _showEvidenceLightbox(
                                 context,
@@ -882,15 +885,19 @@ class _InspectionDetailsDialog extends StatelessWidget {
                                 width: 110,
                                 height: 110,
                                 decoration: BoxDecoration(
+                                  color: Tok.bg,
                                   borderRadius: BorderRadius.circular(Tok.rSm),
                                   border: Border.all(color: Tok.border),
                                 ),
                                 clipBehavior: Clip.antiAlias,
-                                child: Image.memory(
-                                  base64Decode(b64),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(Icons.description_outlined),
-                                ),
+                                child: isPdf
+                                    ? _buildPdfThumbnail(name)
+                                    : Image.memory(
+                                        base64Decode(b64),
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) =>
+                                            _buildPdfThumbnail(name),
+                                      ),
                               ),
                             );
                           }).toList(),
@@ -1166,12 +1173,55 @@ class _InspectionDetailsDialog extends StatelessWidget {
   }
 }
 
+bool _isPdfData(String base64Str, [String? name]) {
+  if (name != null && name.toLowerCase().endsWith('.pdf')) return true;
+  try {
+    final bytes = base64Decode(base64Str);
+    return bytes.length > 4 &&
+        bytes[0] == 0x25 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x44 &&
+        bytes[3] == 0x46;
+  } catch (_) {
+    return false;
+  }
+}
+
+Widget _buildPdfThumbnail(String name) {
+  return Container(
+    width: 110,
+    height: 110,
+    padding: const EdgeInsets.all(8),
+    color: Tok.bg,
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(Icons.picture_as_pdf_rounded, size: 36, color: Tok.danger),
+        const SizedBox(height: 6),
+        Text(
+          name,
+          style: TextStyle(
+            fontSize: 10,
+            color: Tok.textHi,
+            fontWeight: FontWeight.w500,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          textAlign: TextAlign.center,
+        ),
+      ],
+    ),
+  );
+}
+
 void _showEvidenceLightbox(
   BuildContext context,
   String base64,
   List<dynamic> detections,
   String title,
 ) {
+  final isPdf = _isPdfData(base64, title);
+
   showDialog(
     context: context,
     builder: (ctx) => Dialog(
@@ -1205,16 +1255,119 @@ void _showEvidenceLightbox(
                 padding: const EdgeInsets.all(20),
                 child: Column(
                   children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(Tok.rMd),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 440),
-                        child: Image.memory(
-                          base64Decode(base64),
-                          fit: BoxFit.contain,
+                    if (isPdf)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(28),
+                        decoration: BoxDecoration(
+                          color: Tok.bg,
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          border: Border.all(color: Tok.border),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.picture_as_pdf_rounded,
+                                size: 64, color: Tok.danger),
+                            const SizedBox(height: 16),
+                            Text(
+                              title,
+                              style: Tok.h2,
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'PDF Document',
+                              style: Tok.bodySm.copyWith(color: Tok.textLo),
+                            ),
+                            const SizedBox(height: 24),
+                            Wrap(
+                              spacing: 12,
+                              runSpacing: 12,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: () =>
+                                      openBase64InNewTab(base64, 'pdf'),
+                                  icon: const Icon(Icons.open_in_new_rounded,
+                                      size: 18),
+                                  label: const Text('Open PDF in New Tab'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Tok.brand,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(Tok.rSm),
+                                    ),
+                                  ),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: () => downloadBase64File(
+                                      base64,
+                                      title.replaceAll('.pdf', ''),
+                                      'pdf'),
+                                  icon: const Icon(Icons.download_rounded,
+                                      size: 18),
+                                  label: const Text('Download PDF'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Tok.textHi,
+                                    side: BorderSide(color: Tok.border),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(Tok.rSm),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(Tok.rMd),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxHeight: 440),
+                          child: Image.memory(
+                            base64Decode(base64),
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(28),
+                              decoration: BoxDecoration(
+                                color: Tok.bg,
+                                borderRadius: BorderRadius.circular(Tok.rMd),
+                                border: Border.all(color: Tok.border),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.description_outlined,
+                                      size: 64, color: Tok.textMid),
+                                  const SizedBox(height: 16),
+                                  Text(title, style: Tok.h2),
+                                  const SizedBox(height: 16),
+                                  ElevatedButton.icon(
+                                    onPressed: () =>
+                                        openBase64InNewTab(base64, 'pdf'),
+                                    icon: const Icon(Icons.open_in_new_rounded,
+                                        size: 18),
+                                    label: const Text('Open Document'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Tok.brand,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
                     if (detections.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       Container(

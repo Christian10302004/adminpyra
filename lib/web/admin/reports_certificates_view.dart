@@ -1790,10 +1790,24 @@ class _AuditColumn extends StatelessWidget {
               children: docs.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 final base64 = data['base64'] as String?;
+                final name = (data['name'] ?? data['file_name'] ?? 'Requirement Document').toString();
                 final detections = (data['detections'] as List?) ?? const [];
                 if (base64 == null || base64.isEmpty) {
                   return const SizedBox.shrink();
                 }
+
+                bool isPdf = name.toLowerCase().endsWith('.pdf');
+                if (!isPdf) {
+                  try {
+                    final bytes = base64Decode(base64);
+                    isPdf = bytes.length > 4 &&
+                        bytes[0] == 0x25 &&
+                        bytes[1] == 0x50 &&
+                        bytes[2] == 0x44 &&
+                        bytes[3] == 0x46;
+                  } catch (_) {}
+                }
+
                 return InkWell(
                   onTap: () {
                     showDialog(
@@ -1813,7 +1827,7 @@ class _AuditColumn extends StatelessWidget {
                                 padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
                                 child: Row(
                                   children: [
-                                    Text('Inspection Evidence Photo', style: Tok.h2),
+                                    Text(name, style: Tok.h2),
                                     const Spacer(),
                                     IconButton(
                                       icon: const Icon(Icons.close_rounded, size: 18),
@@ -1828,16 +1842,72 @@ class _AuditColumn extends StatelessWidget {
                                   padding: const EdgeInsets.all(20),
                                   child: Column(
                                     children: [
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(Tok.rMd),
-                                        child: ConstrainedBox(
-                                          constraints: const BoxConstraints(maxHeight: 420),
-                                          child: Image.memory(
-                                            base64Decode(base64),
-                                            fit: BoxFit.contain,
+                                      if (isPdf)
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(28),
+                                          decoration: BoxDecoration(
+                                            color: Tok.bg,
+                                            borderRadius: BorderRadius.circular(Tok.rMd),
+                                            border: Border.all(color: Tok.border),
+                                          ),
+                                          child: Column(
+                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            children: [
+                                              Icon(Icons.picture_as_pdf_rounded,
+                                                  size: 64, color: Tok.danger),
+                                              const SizedBox(height: 16),
+                                              Text(name, style: Tok.h2, textAlign: TextAlign.center),
+                                              const SizedBox(height: 6),
+                                              Text('PDF Document', style: Tok.bodySm.copyWith(color: Tok.textLo)),
+                                              const SizedBox(height: 24),
+                                              Wrap(
+                                                spacing: 12,
+                                                runSpacing: 12,
+                                                alignment: WrapAlignment.center,
+                                                children: [
+                                                  ElevatedButton.icon(
+                                                    onPressed: () => openBase64InNewTab(base64, 'pdf'),
+                                                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                                                    label: const Text('Open PDF in New Tab'),
+                                                    style: ElevatedButton.styleFrom(
+                                                      backgroundColor: Tok.brand,
+                                                      foregroundColor: Colors.white,
+                                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius: BorderRadius.circular(Tok.rSm),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  OutlinedButton.icon(
+                                                    onPressed: () => downloadBase64File(base64, name.replaceAll('.pdf', ''), 'pdf'),
+                                                    icon: const Icon(Icons.download_rounded, size: 18),
+                                                    label: const Text('Download PDF'),
+                                                    style: OutlinedButton.styleFrom(
+                                                      foregroundColor: Tok.textHi,
+                                                      side: BorderSide(color: Tok.border),
+                                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                                      shape: RoundedRectangleBorder(
+                                                        borderRadius: BorderRadius.circular(Tok.rSm),
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ],
+                                          ),
+                                        )
+                                      else
+                                        ClipRRect(
+                                          borderRadius: BorderRadius.circular(Tok.rMd),
+                                          child: ConstrainedBox(
+                                            constraints: const BoxConstraints(maxHeight: 420),
+                                            child: Image.memory(
+                                              base64Decode(base64),
+                                              fit: BoxFit.contain,
+                                            ),
                                           ),
                                         ),
-                                      ),
                                       if (detections.isNotEmpty) ...[
                                         const SizedBox(height: 16),
                                         Container(
@@ -1907,25 +1977,65 @@ class _AuditColumn extends StatelessWidget {
                   borderRadius: BorderRadius.circular(Tok.rMd),
                   child: Stack(
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(Tok.rMd),
-                        child: Image.memory(
-                          base64Decode(base64),
+                      if (isPdf)
+                        Container(
                           width: 120,
                           height: 120,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) => Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Tok.bg,
+                            borderRadius: BorderRadius.circular(Tok.rMd),
+                            border: Border.all(color: Tok.border),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.picture_as_pdf_rounded, size: 36, color: Tok.danger),
+                              const SizedBox(height: 6),
+                              Text(
+                                name,
+                                style: TextStyle(fontSize: 10, color: Tok.textHi, fontWeight: FontWeight.w500),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          child: Image.memory(
+                            base64Decode(base64),
                             width: 120,
                             height: 120,
-                            color: Tok.surfaceAlt,
-                            alignment: Alignment.center,
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              color: Tok.textLo,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Container(
+                              width: 120,
+                              height: 120,
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Tok.bg,
+                                borderRadius: BorderRadius.circular(Tok.rMd),
+                                border: Border.all(color: Tok.border),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.picture_as_pdf_rounded, size: 36, color: Tok.danger),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    name,
+                                    style: TextStyle(fontSize: 10, color: Tok.textHi),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
+                              ),
                             ),
                           ),
                         ),
-                      ),
                       if (detections.isNotEmpty)
                         Positioned(
                           bottom: 4,
@@ -2061,6 +2171,20 @@ class _MediaGrid extends StatelessWidget {
   final List<_MediaItem> items;
   const _MediaGrid({required this.items});
 
+  bool _isPdfData(String base64Str, [String? name]) {
+    if (name != null && name.toLowerCase().endsWith('.pdf')) return true;
+    try {
+      final bytes = base64Decode(base64Str);
+      return bytes.length > 4 &&
+          bytes[0] == 0x25 &&
+          bytes[1] == 0x50 &&
+          bytes[2] == 0x44 &&
+          bytes[3] == 0x46;
+    } catch (_) {
+      return false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
@@ -2073,21 +2197,122 @@ class _MediaGrid extends StatelessWidget {
       ),
       itemCount: items.length,
       itemBuilder: (context, index) {
-        return ClipRRect(
+        final item = items[index];
+        final isPdf = _isPdfData(item.base64, item.name);
+
+        return InkWell(
+          onTap: () {
+            if (isPdf) {
+              openBase64InNewTab(item.base64, 'pdf');
+            } else {
+              _showSingleMediaDialog(context, item);
+            }
+          },
           borderRadius: BorderRadius.circular(Tok.rMd),
           child: Container(
+            padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Tok.bg,
               borderRadius: BorderRadius.circular(Tok.rMd),
               border: Border.all(color: Tok.border),
-              image: DecorationImage(
-                image: MemoryImage(base64Decode(items[index].base64)),
-                fit: BoxFit.cover,
-              ),
             ),
+            child: isPdf
+                ? Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.picture_as_pdf_rounded,
+                          size: 48, color: Tok.danger),
+                      const SizedBox(height: 10),
+                      Text(
+                        item.name,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Tok.textHi,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Click to view PDF',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Tok.brand,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  )
+                : ClipRRect(
+                    borderRadius: BorderRadius.circular(Tok.rMd),
+                    child: Image.memory(
+                      base64Decode(item.base64),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.picture_as_pdf_rounded,
+                              size: 48, color: Tok.danger),
+                          const SizedBox(height: 8),
+                          Text(item.name,
+                              style:
+                                  TextStyle(fontSize: 12, color: Tok.textHi)),
+                        ],
+                      ),
+                    ),
+                  ),
           ),
         );
       },
+    );
+  }
+
+  void _showSingleMediaDialog(BuildContext context, _MediaItem item) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Tok.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tok.rLg),
+          side: BorderSide(color: Tok.border),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 750, maxHeight: 680),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+                child: Row(
+                  children: [
+                    Text(item.name, style: Tok.h2),
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      onPressed: () => Navigator.pop(ctx),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: Tok.borderSoft),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(Tok.rMd),
+                    child: Image.memory(
+                      base64Decode(item.base64),
+                      fit: BoxFit.contain,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

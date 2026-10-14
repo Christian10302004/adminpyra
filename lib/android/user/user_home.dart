@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../../services/auth_service.dart';
 import '../../services/web_helper.dart';
@@ -115,7 +117,17 @@ class _UserHomeState extends State<UserHome> {
             onTabRequested: (i) => setState(() => _selectedIndex = i),
             onUploadRequirement: _uploadRequirement,
             onSubmitRequirements: _submitFinalRequirements,
-            onViewEvidence: (b64) => _showMediaDialog(base64: b64, title: 'Inspection evidence'),
+            onViewEvidence: (b64) {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (context) => CertificateModal(
+                  base64Data: b64,
+                  fileName: 'Inspection_Evidence.jpg',
+                ),
+              );
+            },
             onViewCertificate: () {},
           ),
           RequestTab(
@@ -141,22 +153,103 @@ class _UserHomeState extends State<UserHome> {
   // Shared logic: uploads, downloads, media
   // ---------------------------------------------------------------------------
   Future<void> _uploadRequirement(String docId) async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 25,
-      maxWidth: 1024,
-      maxHeight: 1024,
+    final colors = context.colors;
+
+    final String? option = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: colors.bg,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  decoration: BoxDecoration(
+                    color: colors.border,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Upload Requirement',
+                      style: Tok.h3.copyWith(color: colors.textHi),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined, color: Tok.brand),
+                  title: Text('Take Photo', style: Tok.body.copyWith(color: colors.textHi)),
+                  onTap: () => Navigator.pop(context, 'camera'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined, color: Tok.brand),
+                  title: Text('Choose Photo from Gallery', style: Tok.body.copyWith(color: colors.textHi)),
+                  onTap: () => Navigator.pop(context, 'gallery'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.note_add_outlined, color: Tok.brand),
+                  title: Text('Choose File / Document', style: Tok.body.copyWith(color: colors.textHi)),
+                  subtitle: Text('PDF, DOC, TXT, Images', style: Tok.caption.copyWith(color: colors.textLo)),
+                  onTap: () => Navigator.pop(context, 'file'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
-    if (image == null) return;
+
+    if (option == null) return;
 
     try {
-      final bytes = await image.readAsBytes();
-      if (bytes.length > 750000) throw 'Image is too large for database storage.';
+      Uint8List? bytes;
+      String fileName = 'Document_${DateTime.now().millisecondsSinceEpoch}';
+
+      if (option == 'camera' || option == 'gallery') {
+        final ImagePicker picker = ImagePicker();
+        final XFile? image = await picker.pickImage(
+          source: option == 'camera' ? ImageSource.camera : ImageSource.gallery,
+          imageQuality: 25,
+          maxWidth: 1024,
+          maxHeight: 1024,
+        );
+        if (image == null) return;
+        bytes = await image.readAsBytes();
+        fileName = image.name.isNotEmpty ? image.name : '$fileName.jpg';
+      } else if (option == 'file') {
+        final result = await FilePicker.platform.pickFiles(
+          type: FileType.custom,
+          allowedExtensions: ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'txt'],
+          withData: true,
+        );
+        if (result == null || result.files.isEmpty) return;
+        final file = result.files.first;
+        bytes = file.bytes;
+        if (bytes == null && file.path != null) {
+          bytes = await File(file.path!).readAsBytes();
+        }
+        fileName = file.name;
+      }
+
+      if (bytes == null) return;
+      if (bytes.length > 750000) throw 'File is too large for database storage (Max 750 KB).';
 
       final base64String = base64Encode(bytes);
       final Map<String, dynamic> payload = {
         'base64': base64String,
+        'name': fileName,
         'uploaded_at': FieldValue.serverTimestamp(),
       };
 
@@ -183,7 +276,7 @@ class _UserHomeState extends State<UserHome> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Uploaded'),
+              content: Text('Uploaded successfully'),
               backgroundColor: Tok.ok,
               behavior: SnackBarBehavior.floating,
             ),
@@ -241,198 +334,26 @@ class _UserHomeState extends State<UserHome> {
 
   void _viewUserCertificate(Map<String, dynamic> data) {
     final String? base64 = data['certificate_base64'];
-    final String ext = data['certificate_extension'] ?? 'jpg';
-    final String name = data['certificate_filename'] ?? 'fire_safety_certificate';
-    if (base64 == null) return;
+    if (base64 == null || base64.isEmpty) return;
 
-    if (ext.toLowerCase() == 'pdf' && !kIsWeb) {
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          backgroundColor: context.colors.surface,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(Tok.rMd),
-            side: BorderSide(color: context.colors.border),
-          ),
-          title: Text('Download PDF?', style: TextStyle(color: context.colors.textHi, fontSize: 16, fontWeight: FontWeight.w600)),
-          content: Text(
-            'This certificate is a PDF file and will be saved to your device.',
-            style: TextStyle(color: context.colors.textMid, fontSize: 13),
-          ),
-          actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              style: TextButton.styleFrom(foregroundColor: context.colors.textMid),
-              child: const Text('Cancel', style: TextStyle(fontSize: 13)),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _downloadFile(base64, name, ext);
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Tok.brand,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Tok.rSm)),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-              child: const Text('Download'),
-            ),
-          ],
-        ),
-      );
-      return;
+    final String ext = (data['certificate_extension'] ?? 'pdf').toString().toLowerCase();
+    String name = (data['certificate_filename'] ?? '').toString();
+    if (name.isEmpty) {
+      final prop = (data['property_name'] ?? 'Inspection').toString().replaceAll(' ', '_');
+      name = 'Certificate_$prop.$ext';
+    } else if (!name.toLowerCase().endsWith('.$ext') && !name.toLowerCase().endsWith('.pdf')) {
+      name = '$name.$ext';
     }
 
-    if (ext.toLowerCase() == 'pdf' && kIsWeb) {
-      openBase64InNewTab(base64, ext);
-    } else {
-      _showMediaDialog(
-        base64: base64,
-        title: name,
-        subtitle: 'Fire Safety Clearance',
-        onDownload: () => _downloadFile(base64, name, ext),
-      );
-    }
-  }
-
-  void _showMediaDialog({
-    required String base64,
-    required String title,
-    String? subtitle,
-    VoidCallback? onDownload,
-  }) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (context) => Dialog(
-        backgroundColor: context.colors.surface,
-        insetPadding: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Tok.rMd),
-          side: BorderSide(color: context.colors.border),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640, maxHeight: 720),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(title, style: Tok.h2.copyWith(color: context.colors.textHi)),
-                          if (subtitle != null) ...[
-                            const SizedBox(height: 2),
-                            Text(subtitle, style: Tok.caption.copyWith(color: context.colors.textLo)),
-                          ],
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded, size: 18, color: context.colors.textMid),
-                      tooltip: 'Close',
-                    ),
-                  ],
-                ),
-              ),
-              Divider(height: 1, color: context.colors.borderSoft),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(Tok.rSm),
-                    child: Image.memory(base64Decode(base64), fit: BoxFit.contain),
-                  ),
-                ),
-              ),
-              if (onDownload != null) ...[
-                Divider(height: 1, color: context.colors.borderSoft),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: TextButton.styleFrom(foregroundColor: context.colors.textMid),
-                        child: const Text('Close', style: TextStyle(fontSize: 13)),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          onDownload();
-                        },
-                        icon: const Icon(Icons.download_rounded, size: 14),
-                        label: const Text('Download'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Tok.brand,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(Tok.rSm),
-                          ),
-                          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CertificateModal(
+        base64Data: base64,
+        fileName: name,
       ),
     );
-  }
-
-  Future<void> _downloadFile(String base64, String name, String ext) async {
-    if (kIsWeb) {
-      downloadBase64File(base64, name, ext);
-      return;
-    }
-    try {
-      final bytes = base64Decode(base64);
-      Directory? directory;
-      if (Platform.isAndroid) {
-        directory = Directory('/storage/emulated/0/Download');
-        if (!await directory.exists()) {
-          directory = await getExternalStorageDirectory();
-        }
-      } else {
-        directory = await getApplicationDocumentsDirectory();
-      }
-      if (directory == null) throw 'Could not access storage directory';
-      final filePath = '${directory.path}/$name.$ext';
-      final file = File(filePath);
-      await file.writeAsBytes(bytes);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Saved to $name.$ext'),
-          backgroundColor: Tok.ok,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Download failed: $e'),
-          backgroundColor: Tok.danger,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
   }
 
   void _showNotificationsSheet(BuildContext context, String uid) {
