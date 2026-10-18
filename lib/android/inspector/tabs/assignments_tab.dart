@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../../services/theme_provider.dart';
+import '../../../services/inspector_service.dart';
 import '../inspector_theme.dart';
 import '../audit_sheet.dart';
 
@@ -12,7 +12,8 @@ class AssignmentsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Provider.of<ThemeProvider>(context);
-    final User? user = FirebaseAuth.instance.currentUser;
+    final inspectorService = Provider.of<InspectorService>(context);
+    final user = inspectorService.currentUser;
 
     if (user == null) {
       return const EmptyBlock(
@@ -22,33 +23,14 @@ class AssignmentsTab extends StatelessWidget {
       );
     }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .snapshots(),
+    return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      stream: inspectorService.streamAssignedInspections(user.uid),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingBlock();
         }
 
-        final allDocs = snapshot.data?.docs ?? const [];
-
-        // Filter assigned inspections for the current inspector
-        final docs = allDocs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          final status = (data['status'] ?? '').toString();
-          final assignedTo = (data['assigned_to'] ?? '').toString();
-          final repId = (data['representative_id'] ?? '').toString();
-          final inspectorUid = (data['inspector_uid'] ?? '').toString();
-
-          final isTargetInspector =
-              assignedTo == user.uid ||
-              repId == user.uid ||
-              inspectorUid == user.uid ||
-              assignedTo.isEmpty;
-
-          return status == 'assigned' && isTargetInspector;
-        }).toList();
+        final docs = snapshot.data ?? const [];
 
         if (docs.isEmpty) {
           return const EmptyBlock(
@@ -64,7 +46,7 @@ class AssignmentsTab extends StatelessWidget {
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, index) {
             final doc = docs[index];
-            final data = doc.data() as Map<String, dynamic>;
+            final data = doc.data();
             return _AssignmentRow(
               data: data,
               onOpen: () => showAuditSheet(
@@ -177,6 +159,26 @@ class _AssignmentRow extends StatelessWidget {
                         style: Tok.bodySm.copyWith(color: Tok.textMid),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+              if (data['lat'] != null && data['lng'] != null) ...[
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.pin_drop_rounded,
+                      size: 14,
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Pinned Location: ${(data['lat'] as num).toStringAsFixed(4)}, ${(data['lng'] as num).toStringAsFixed(4)}',
+                      style: Tok.caption.copyWith(
+                        color: Tok.brandSoft,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],

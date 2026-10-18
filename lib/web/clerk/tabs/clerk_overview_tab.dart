@@ -492,6 +492,7 @@ class _RequestRowState extends State<_RequestRow> {
   Widget build(BuildContext context) {
     final data = widget.data;
     final status = (data['status'] ?? 'pending_approval').toString();
+    final adminRemarks = (data['admin_remarks'] ?? '').toString();
     final hasCert = data['certificate_base64'] != null;
     final isCompleted = status == 'completed';
     final barangay = _barangayFromAddress((data['address'] ?? '').toString());
@@ -499,71 +500,189 @@ class _RequestRowState extends State<_RequestRow> {
     return MouseRegion(
       onEnter: (_) => setState(() => _hover = true),
       onExit: (_) => setState(() => _hover = false),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 120),
-        color:
-        _hover ? Tok.surfaceAlt.withValues(alpha: 0.55) : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 4,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    (data['property_name'] ?? 'Untitled').toString(),
-                    style: Tok.body.copyWith(fontWeight: FontWeight.w500),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    (data['full_name'] ?? data['email'] ?? '—').toString(),
-                    style:
-                    Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            Expanded(
-              flex: 3,
-              child: Text(
-                barangay,
-                style: Tok.bodySm.copyWith(color: Tok.textMid),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            SizedBox(
-              width: 160,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: StatusTag(status: status),
-              ),
-            ),
-            SizedBox(
-              width: 160,
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Row(
+      child: InkWell(
+        onTap: () => _showRequestDetails(context, data),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          color:
+          _hover ? Tok.surfaceAlt.withValues(alpha: 0.55) : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _CertIndicator(
-                        hasCert: hasCert, isCompleted: isCompleted),
-                    const SizedBox(width: 12),
-                    if (isCompleted && !hasCert)
-                      RowActionButton(
-                        label: 'Upload',
-                        icon: Icons.upload_file_outlined,
-                        onPressed: widget.onUploadCertificate,
+                    Text(
+                      (data['property_name'] ?? 'Untitled').toString(),
+                      style: Tok.body.copyWith(fontWeight: FontWeight.w500),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      (data['full_name'] ?? data['email'] ?? '—').toString(),
+                      style:
+                      Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (adminRemarks.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          Icon(
+                            status == 'resubmission_required'
+                                ? Icons.warning_amber_rounded
+                                : Icons.info_outline_rounded,
+                            size: 12,
+                            color: status == 'resubmission_required' ? Tok.danger : Tok.warn,
+                          ),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Remark: $adminRemarks',
+                              style: Tok.bodySm.copyWith(
+                                color: status == 'resubmission_required' ? Tok.danger : Tok.warn,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
+                    ],
                   ],
                 ),
               ),
+              Expanded(
+                flex: 3,
+                child: Text(
+                  barangay,
+                  style: Tok.bodySm.copyWith(color: Tok.textMid),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: StatusTag(status: status),
+                ),
+              ),
+              SizedBox(
+                width: 160,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    children: [
+                      _CertIndicator(
+                          hasCert: hasCert, isCompleted: isCompleted),
+                      const SizedBox(width: 12),
+                      if (isCompleted && !hasCert)
+                        RowActionButton(
+                          label: 'Upload',
+                          icon: Icons.upload_file_outlined,
+                          onPressed: widget.onUploadCertificate,
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showRequestDetails(BuildContext context, Map<String, dynamic> data) {
+    final status = (data['status'] ?? 'pending_approval').toString();
+    final propName = (data['property_name'] ?? 'Untitled').toString();
+    final ownerName = (data['full_name'] ?? data['email'] ?? '—').toString();
+    final adminRemarks = (data['admin_remarks'] ?? 'None').toString();
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        backgroundColor: Tok.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tok.rLg),
+          side: BorderSide(color: Tok.border),
+        ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 540),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(propName, style: Tok.h2),
+                          const SizedBox(height: 2),
+                          Text('Owner: $ownerName', style: Tok.bodySm.copyWith(color: Tok.textLo)),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close_rounded, size: 18, color: Tok.textMid),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Divider(height: 1, color: Tok.borderSoft),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Text('Status: ', style: Tok.label),
+                    StatusTag(status: status),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text('BFP ADMIN / MARSHAL REMARKS', style: Tok.label),
+                const SizedBox(height: 6),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Tok.bg,
+                    borderRadius: BorderRadius.circular(Tok.rMd),
+                    border: Border.all(color: Tok.border),
+                  ),
+                  child: Text(
+                    adminRemarks,
+                    style: Tok.body.copyWith(
+                      color: adminRemarks != 'None' ? Tok.textHi : Tok.textLo,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Tok.surfaceAlt,
+                      foregroundColor: Tok.textHi,
+                    ),
+                    child: const Text('Close'),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

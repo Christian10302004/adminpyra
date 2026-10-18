@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
-import '../../../services/auth_service.dart';
+import '../../../services/user_service.dart';
 import '../../../models/user_model.dart';
 import '../user_theme.dart';
 
@@ -18,14 +18,12 @@ class DashboardTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final User? user = FirebaseAuth.instance.currentUser;
+    final userService = Provider.of<UserService>(context);
+    final User? user = userService.currentUser;
     final colors = context.colors;
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .where('uid', isEqualTo: user?.uid)
-          .snapshots(),
+      stream: userService.streamUserInspectionRequests(user?.uid ?? ''),
       builder: (context, snapshot) {
         final docs = snapshot.data?.docs ?? const <QueryDocumentSnapshot>[];
         int pending = 0;
@@ -42,8 +40,7 @@ class DashboardTab extends StatelessWidget {
         final total = docs.length;
 
         return FutureBuilder<UserModel?>(
-          future: Provider.of<AuthService>(context, listen: false)
-              .getUserData(user?.uid ?? ''),
+          future: userService.getUserData(user?.uid ?? ''),
           builder: (context, userSnapshot) {
             final firstName =
                 userSnapshot.data?.fullName.split(' ').first ?? 'there';
@@ -369,11 +366,8 @@ class _IssuedCertificates extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .where('uid', isEqualTo: uid)
-          .where('certificate_status', isEqualTo: 'issued')
-          .snapshots(),
+      stream: Provider.of<UserService>(context, listen: false)
+          .streamUserIssuedCertificates(uid),
       builder: (context, snapshot) {
         final colors = context.colors;
 

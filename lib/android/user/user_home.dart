@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import '../../services/auth_service.dart';
-import '../../services/web_helper.dart';
-import '../../services/offline_service.dart';
+import '../../services/user_service.dart';
 import '../../models/user_model.dart';
 
 import 'user_theme.dart';
@@ -35,13 +31,18 @@ class _UserHomeState extends State<UserHome> {
   @override
   void initState() {
     super.initState();
-    OfflineService.syncOfflineData();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<UserService>().syncOfflineData();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context);
-    final User? user = FirebaseAuth.instance.currentUser;
+    final userService = Provider.of<UserService>(context);
+    final User? user = userService.currentUser;
     final colors = context.colors;
 
     return Scaffold(
@@ -50,7 +51,7 @@ class _UserHomeState extends State<UserHome> {
         title: Text(_getTitle(), style: Tok.h1.copyWith(color: colors.textHi)),
         actions: [
           FutureBuilder<int>(
-            future: OfflineService.getQueueCount(),
+            future: userService.getOfflineQueueCount(),
             builder: (context, snapshot) {
               final count = snapshot.data ?? 0;
               if (count == 0) return const SizedBox();
@@ -68,7 +69,7 @@ class _UserHomeState extends State<UserHome> {
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
-                  await OfflineService.syncOfflineData();
+                  await userService.syncOfflineData();
                   if (mounted) setState(() {});
                 },
               );
@@ -77,11 +78,7 @@ class _UserHomeState extends State<UserHome> {
           IconButton(
             tooltip: 'Notifications',
             icon: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('notifications')
-                  .where('uid', isEqualTo: user?.uid)
-                  .where('read', isEqualTo: false)
-                  .snapshots(),
+              stream: userService.streamUnreadNotifications(user?.uid ?? ''),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return const Icon(Icons.notifications_outlined, size: 20);
@@ -247,41 +244,23 @@ class _UserHomeState extends State<UserHome> {
       if (bytes.length > 750000) throw 'File is too large for database storage (Max 750 KB).';
 
       final base64String = base64Encode(bytes);
-      final Map<String, dynamic> payload = {
-        'base64': base64String,
-        'name': fileName,
-        'uploaded_at': FieldValue.serverTimestamp(),
-      };
+      if (!mounted) return;
+      final userService = Provider.of<UserService>(context, listen: false);
+      final isOnline = await userService.uploadRequirementFile(
+        docId: docId,
+        fileName: fileName,
+        base64String: base64String,
+      );
 
-      final connectivity = await Connectivity().checkConnectivity();
-      if (connectivity.contains(ConnectivityResult.none)) {
-        payload['uploaded_at'] = DateTime.now().toIso8601String();
-        await OfflineService.addToQueue('requirement', docId, payload);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Saved locally. Will sync when online.'),
-              backgroundColor: Tok.info,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-          setState(() {});
-        }
-      } else {
-        await FirebaseFirestore.instance
-            .collection('inspection_requests')
-            .doc(docId)
-            .collection('files')
-            .add(payload);
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Uploaded successfully'),
-              backgroundColor: Tok.ok,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isOnline ? 'Uploaded successfully' : 'Saved locally. Will sync when online.'),
+            backgroundColor: isOnline ? Tok.ok : Tok.info,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        if (!isOnline) setState(() {});
       }
     } catch (e) {
       if (mounted) {
@@ -297,39 +276,18 @@ class _UserHomeState extends State<UserHome> {
   }
 
   Future<void> _submitFinalRequirements(String docId) async {
-    final Map<String, dynamic> payload = {
-      'status': 'requirements_submitted',
-      'requirements_at': FieldValue.serverTimestamp(),
-    };
-
-    final connectivity = await Connectivity().checkConnectivity();
-    if (connectivity.contains(ConnectivityResult.none)) {
-      payload['requirements_at'] = DateTime.now().toIso8601String();
-      await OfflineService.addToQueue('completion', docId, payload);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Status update queued locally.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } else {
-      await FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .doc(docId)
-          .update(payload);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Requirements submitted for review.'),
-            backgroundColor: Tok.ok,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
+    final userService = Provider.of<UserService>(context, listen: false);
+    final isOnline = await userService.submitFinalRequirements(docId);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isOnline ? 'Requirements submitted for review.' : 'Status update queued locally.'),
+          backgroundColor: isOnline ? Tok.ok : null,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      setState(() {});
     }
-    if (mounted) setState(() {});
   }
 
   void _viewUserCertificate(Map<String, dynamic> data) {
@@ -357,6 +315,8 @@ class _UserHomeState extends State<UserHome> {
   }
 
   void _showNotificationsSheet(BuildContext context, String uid) {
+    final userService = Provider.of<UserService>(context, listen: false);
+
     showModalBottomSheet(
       context: context,
       backgroundColor: context.colors.surface,
@@ -400,10 +360,7 @@ class _UserHomeState extends State<UserHome> {
             Divider(height: 1, color: context.colors.borderSoft),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('notifications')
-                    .where('uid', isEqualTo: uid)
-                    .snapshots(),
+                stream: userService.streamNotifications(uid),
                 builder: (context, snapshot) {
                   if (snapshot.hasError) {
                     return Center(child: Text('Error: ${snapshot.error}'));
@@ -435,7 +392,7 @@ class _UserHomeState extends State<UserHome> {
                       final data = doc.data() as Map<String, dynamic>;
                       final unread = data['read'] != true;
                       return InkWell(
-                        onTap: () => FirebaseFirestore.instance.collection('notifications').doc(doc.id).update({'read': true}),
+                        onTap: () => userService.markNotificationAsRead(doc.id),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                           color: unread ? context.colors.surfaceAlt.withValues(alpha: 0.5) : null,

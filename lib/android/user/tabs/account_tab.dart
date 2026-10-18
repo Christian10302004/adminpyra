@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:convert';
 import '../user_theme.dart';
 import '../../../models/user_model.dart';
-import '../../../services/auth_service.dart';
+import '../../../services/user_service.dart';
 import '../../../services/theme_provider.dart';
 
 class AccountTab extends StatefulWidget {
@@ -37,11 +36,12 @@ class _AccountTabState extends State<AccountTab> {
       if (bytes.length > 500000) throw 'Image is too large.';
       final base64String = base64Encode(bytes);
 
-      final user = FirebaseAuth.instance.currentUser;
+      if (!mounted) return;
+      final userService = Provider.of<UserService>(context, listen: false);
+      final user = userService.currentUser;
       if (user == null) return;
 
-      await Provider.of<AuthService>(context, listen: false)
-          .updateUserData(user.uid, {'profile_pic_base64': base64String});
+      await userService.updateProfilePicture(user.uid, base64String);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -184,21 +184,13 @@ class _AccountTabState extends State<AccountTab> {
                         }
 
                         try {
-                          await FirebaseAuth.instance.currentUser
-                              ?.updatePassword(newPass);
+                          final userService = Provider.of<UserService>(context, listen: false);
+                          await userService.updatePassword(newPass);
 
-                          final user = FirebaseAuth.instance.currentUser;
-                          if (user != null) {
-                            await Provider.of<AuthService>(context,
-                                listen: false)
-                                .updateUserData(user.uid, {
-                              'last_password_change':
-                              FieldValue.serverTimestamp(),
-                            });
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext);
                           }
-
                           if (!mounted) return;
-                          Navigator.pop(dialogContext);
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Password updated successfully'),
@@ -255,11 +247,11 @@ class _AccountTabState extends State<AccountTab> {
   @override
   Widget build(BuildContext context) {
     final colors = context.colors;
-    final User? user = FirebaseAuth.instance.currentUser;
+    final userService = Provider.of<UserService>(context);
+    final User? user = userService.currentUser;
 
     return FutureBuilder<UserModel?>(
-      future: Provider.of<AuthService>(context, listen: false)
-          .getUserData(user?.uid ?? ''),
+      future: userService.getUserData(user?.uid ?? ''),
       builder: (context, snapshot) {
         final userData = snapshot.data;
         return SingleChildScrollView(
@@ -427,7 +419,7 @@ class _AccountTabState extends State<AccountTab> {
               SizedBox(
                 height: 44,
                 child: OutlinedButton.icon(
-                  onPressed: () => FirebaseAuth.instance.signOut(),
+                  onPressed: () => Provider.of<UserService>(context, listen: false).signOut(),
                   icon: const Icon(Icons.logout_rounded,
                       size: 16, color: Tok.danger),
                   label: const Text(
@@ -523,13 +515,15 @@ class _AccountTabState extends State<AccountTab> {
                     const SizedBox(width: 8),
                     ElevatedButton(
                       onPressed: () async {
-                        final user = FirebaseAuth.instance.currentUser;
+                        final userService = Provider.of<UserService>(context, listen: false);
+                        final user = userService.currentUser;
                         if (user == null) return;
-                        await Provider.of<AuthService>(context, listen: false)
-                            .updateUserData(
+                        await userService.updateUserData(
                             user.uid, {fieldKey: controller.text.trim()});
+                        if (dialogContext.mounted) {
+                          Navigator.pop(dialogContext);
+                        }
                         if (!mounted) return;
-                        Navigator.pop(dialogContext);
                         setState(() {});
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
@@ -713,7 +707,7 @@ class _SettingsToggleRow extends StatelessWidget {
           ),
           Switch.adaptive(
             value: value,
-            activeColor: Tok.brand,
+            activeTrackColor: Tok.brand,
             onChanged: onChanged,
           ),
         ],

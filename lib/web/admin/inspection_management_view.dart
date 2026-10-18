@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'dart:convert';
 import '../../services/textbee_service.dart';
 import '../../services/web_helper.dart';
@@ -11,6 +13,8 @@ const _statusOptions = <String, String?>{
   'Pending approval': 'pending_approval',
   'Awaiting requirements': 'approved_waiting_requirements',
   'Requirements submitted': 'requirements_submitted',
+  'Resubmission required': 'resubmission_required',
+  'Accepted (Conditional)': 'requirements_accepted_conditional',
   'Assigned': 'assigned',
   'Completed': 'completed',
 };
@@ -267,7 +271,7 @@ class _TableHeader extends StatelessWidget {
             flex: 3,
             child: Text('PROCESS STAGE', style: Tok.label),
           ),
-          SizedBox(width: 180, child: Text('ACTION', style: Tok.label)),
+          SizedBox(width: 340, child: Text('ACTION', style: Tok.label)),
         ],
       ),
     );
@@ -374,7 +378,7 @@ class _InspectionRowState extends State<_InspectionRow> {
 
               // Actions
               SizedBox(
-                width: 180,
+                width: 340,
                 child: Align(
                   alignment: Alignment.centerRight,
                   child: _ActionAffordance(
@@ -427,6 +431,10 @@ class _StatusPill extends StatelessWidget {
         return ('Awaiting Documents', Tok.info);
       case 'requirements_submitted':
         return ('Reviewing Files', Tok.purple);
+      case 'resubmission_required':
+        return ('Needs Resubmit', Tok.danger);
+      case 'requirements_accepted_conditional':
+        return ('Accepted w/ Remark', Tok.warn);
       case 'assigned':
         return ('Assigned', Tok.info);
       case 'completed':
@@ -478,16 +486,32 @@ class _ActionAffordance extends StatelessWidget {
         ],
       );
     }
-    if (status == 'requirements_submitted') {
+    if (status == 'requirements_submitted' ||
+        status == 'requirements_accepted_conditional' ||
+        status == 'resubmission_required' ||
+        status == 'approved_waiting_requirements') {
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _MiniButton(
-            label: 'Assign Inspector',
-            color: Tok.info,
-            onTap: () => _showInspectorPicker(context),
-          ),
-          const SizedBox(width: 6),
+          if (status == 'requirements_submitted' ||
+              status == 'approved_waiting_requirements') ...[
+            _MiniButton(
+              label: 'Review',
+              color: Tok.purple,
+              onTap: () => _showReviewDialog(context),
+            ),
+            const SizedBox(width: 6),
+          ],
+          if (status == 'requirements_submitted' ||
+              status == 'requirements_accepted_conditional' ||
+              status == 'approved_waiting_requirements') ...[
+            _MiniButton(
+              label: 'Assign Inspector',
+              color: Tok.info,
+              onTap: () => _showInspectorPicker(context),
+            ),
+            const SizedBox(width: 6),
+          ],
           _MiniButton(
             label: 'Details',
             color: Tok.surfaceAlt,
@@ -534,7 +558,10 @@ class _ActionAffordance extends StatelessWidget {
     showDialog(
       context: context,
       builder: (context) => _InspectorPickerDialog(
-        onSelect: (id, name) async {
+        onSelect: (id, name, selectedDate) async {
+          final dateStr =
+              '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}';
+
           await FirebaseFirestore.instance
               .collection('inspection_requests')
               .doc(docId)
@@ -542,13 +569,15 @@ class _ActionAffordance extends StatelessWidget {
             'status': 'assigned',
             'assigned_to': id,
             'inspector_name': name,
+            'scheduled_date': Timestamp.fromDate(selectedDate),
+            'scheduled_date_str': dateStr,
             'assigned_at': FieldValue.serverTimestamp(),
           });
 
           await FirebaseFirestore.instance.collection('notifications').add({
             'uid': data['uid'],
             'title': 'Inspector Assigned',
-            'message': '$name has been assigned to inspect your property.',
+            'message': '$name has been assigned to inspect your property on $dateStr.',
             'timestamp': FieldValue.serverTimestamp(),
             'read': false,
           });
@@ -556,13 +585,24 @@ class _ActionAffordance extends StatelessWidget {
           if (data['phone'] != null) {
             TextbeeService.sendSMS(
               data['phone'],
-              "BFP Alert: Inspector $name has been assigned to ${data['property_name']}. They will contact you shortly.",
+              "BFP Alert: Inspector $name has been assigned to ${data['property_name']} for $dateStr. They will contact you shortly.",
             );
           }
 
           if (context.mounted) Navigator.pop(context);
           onUpdated();
         },
+      ),
+    );
+  }
+
+  void _showReviewDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => _RequirementsReviewDialog(
+        docId: docId,
+        data: data,
+        onUpdated: onUpdated,
       ),
     );
   }
@@ -614,12 +654,49 @@ class _MiniButton extends StatelessWidget {
   }
 }
 
-class _InspectorPickerDialog extends StatelessWidget {
-  final void Function(String id, String name) onSelect;
+class _InspectorPickerDialog extends StatefulWidget {
+  final void Function(String id, String name, DateTime scheduledDate) onSelect;
   const _InspectorPickerDialog({required this.onSelect});
 
   @override
+  State<_InspectorPickerDialog> createState() => _InspectorPickerDialogState();
+}
+
+class _InspectorPickerDialogState extends State<_InspectorPickerDialog> {
+  DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
+
+  String _formatDate(DateTime dt) {
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: ColorScheme.dark(
+              primary: Tok.brand,
+              surface: Tok.surface,
+              onSurface: Tok.textHi,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _selectedDate = picked);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final dateStr = _formatDate(_selectedDate);
+
     return Dialog(
       backgroundColor: Tok.surface,
       shape: RoundedRectangleBorder(
@@ -627,14 +704,15 @@ class _InspectorPickerDialog extends StatelessWidget {
         side: BorderSide(color: Tok.border),
       ),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+        constraints: const BoxConstraints(maxWidth: 450),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     'Assign Inspector',
@@ -644,8 +722,76 @@ class _InspectorPickerDialog extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  StreamBuilder<QuerySnapshot>(
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, size: 18, color: Tok.textMid),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Date Selection Box
+              Text('INSPECTION DATE', style: Tok.label),
+              const SizedBox(height: 6),
+              InkWell(
+                onTap: _pickDate,
+                borderRadius: BorderRadius.circular(Tok.rMd),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Tok.surfaceAlt,
+                    borderRadius: BorderRadius.circular(Tok.rMd),
+                    border: Border.all(color: Tok.border),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.calendar_today_rounded, size: 16, color: Tok.brand),
+                      const SizedBox(width: 10),
+                      Text(
+                        dateStr,
+                        style: TextStyle(
+                          color: Tok.textHi,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Text(
+                        'Change Date',
+                        style: TextStyle(
+                          color: Tok.brand,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              Text('SELECT INSPECTOR (MAX 5 ASSIGNMENTS / DAY)', style: Tok.label),
+              const SizedBox(height: 8),
+
+              // Query all scheduled inspections on dateStr to build inspector counts
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('inspection_requests')
+                    .where('scheduled_date_str', isEqualTo: dateStr)
+                    .snapshots(),
+                builder: (context, dateSnapshot) {
+                  final Map<String, int> inspectorCounts = {};
+                  if (dateSnapshot.hasData) {
+                    for (final doc in dateSnapshot.data!.docs) {
+                      final data = doc.data() as Map<String, dynamic>;
+                      final inspectorId = data['assigned_to'] as String?;
+                      if (inspectorId != null && inspectorId.isNotEmpty) {
+                        inspectorCounts[inspectorId] = (inspectorCounts[inspectorId] ?? 0) + 1;
+                      }
+                    }
+                  }
+
+                  return StreamBuilder<QuerySnapshot>(
                     stream: FirebaseFirestore.instance
                         .collection('users')
                         .where('role', isEqualTo: 'Inspector')
@@ -667,35 +813,415 @@ class _InspectorPickerDialog extends StatelessWidget {
 
                       return Column(
                         children: inspectors.map((doc) {
-                          final name =
-                              (doc.data() as Map)['full_name'] ?? 'Unknown';
-                          return ListTile(
-                            onTap: () => onSelect(doc.id, name),
-                            leading: Container(
-                              width: 32,
-                              height: 32,
-                              decoration: BoxDecoration(
-                                color: Tok.surfaceAlt,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Icon(
-                                Icons.person_outline,
-                                size: 16,
-                                color: Tok.textMid,
+                          final name = (doc.data() as Map)['full_name'] ?? 'Unknown';
+                          final count = inspectorCounts[doc.id] ?? 0;
+                          final isFull = count >= 5;
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            decoration: BoxDecoration(
+                              color: isFull ? Tok.danger.withValues(alpha: 0.05) : Tok.surfaceAlt,
+                              borderRadius: BorderRadius.circular(Tok.rMd),
+                              border: Border.all(
+                                color: isFull ? Tok.danger.withValues(alpha: 0.3) : Tok.borderSoft,
                               ),
                             ),
-                            title: Text(name, style: Tok.body),
-                            trailing: Icon(
-                              Icons.chevron_right,
-                              size: 16,
-                              color: Tok.textLo,
+                            child: ListTile(
+                              onTap: isFull
+                                  ? null
+                                  : () => widget.onSelect(
+                                        doc.id,
+                                        name,
+                                        _selectedDate,
+                                      ),
+                              leading: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: isFull
+                                      ? Tok.danger.withValues(alpha: 0.15)
+                                      : Tok.brand.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Icon(
+                                  Icons.person_outline,
+                                  size: 16,
+                                  color: isFull ? Tok.danger : Tok.brand,
+                                ),
+                              ),
+                              title: Text(
+                                name,
+                                style: Tok.body.copyWith(
+                                  color: isFull ? Tok.textLo : Tok.textHi,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              subtitle: Text(
+                                isFull
+                                    ? 'FULL: 5/5 inspections assigned on $dateStr'
+                                    : '$count/5 assigned for $dateStr',
+                                style: TextStyle(
+                                  color: isFull ? Tok.danger : Tok.ok,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              trailing: isFull
+                                  ? Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: Tok.danger.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(Tok.rSm),
+                                      ),
+                                      child: Text(
+                                        'MAX LIMIT',
+                                        style: TextStyle(
+                                          color: Tok.danger,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.chevron_right,
+                                      size: 16,
+                                      color: Tok.textLo,
+                                    ),
                             ),
                           );
                         }).toList(),
                       );
                     },
+                  );
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RequirementsReviewDialog extends StatefulWidget {
+  final String docId;
+  final Map<String, dynamic> data;
+  final VoidCallback onUpdated;
+
+  const _RequirementsReviewDialog({
+    required this.docId,
+    required this.data,
+    required this.onUpdated,
+  });
+
+  @override
+  State<_RequirementsReviewDialog> createState() =>
+      _RequirementsReviewDialogState();
+}
+
+class _RequirementsReviewDialogState
+    extends State<_RequirementsReviewDialog> {
+  final TextEditingController _remarksController = TextEditingController();
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _remarksController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _processReview(bool returnForResubmit) async {
+    final remark = _remarksController.text.trim();
+    if (remark.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please enter remarks before submitting.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final newStatus = returnForResubmit
+          ? 'resubmission_required'
+          : 'requirements_accepted_conditional';
+
+      await FirebaseFirestore.instance
+          .collection('inspection_requests')
+          .doc(widget.docId)
+          .update({
+        'status': newStatus,
+        'admin_remarks': remark,
+        'reviewed_at': FieldValue.serverTimestamp(),
+      });
+
+      final title = returnForResubmit
+          ? 'Requirements Resubmission Required'
+          : 'Requirements Accepted Provisionally';
+      final msg = returnForResubmit
+          ? 'Your requirements submission for ${widget.data['property_name']} needs correction: $remark'
+          : 'Your requirements for ${widget.data['property_name']} have been conditionally accepted: $remark';
+
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'uid': widget.data['uid'],
+        'title': title,
+        'message': msg,
+        'timestamp': FieldValue.serverTimestamp(),
+        'read': false,
+      });
+
+      if (widget.data['phone'] != null) {
+        TextbeeService.sendSMS(
+          widget.data['phone'],
+          "BFP Notice: $msg",
+        );
+      }
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onUpdated();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final propName =
+        (widget.data['property_name'] ?? 'Untitled Property').toString();
+    final inspectionType =
+        (widget.data['inspection_type'] ?? 'Annual Fire Inspection').toString();
+
+    return Dialog(
+      backgroundColor: Tok.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Tok.rLg),
+        side: BorderSide(color: Tok.border),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 580, maxHeight: 720),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Review Requirements',
+                          style: TextStyle(
+                            color: Tok.textHi,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          propName,
+                          style: Tok.bodySm.copyWith(color: Tok.textLo),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded, size: 18, color: Tok.textMid),
+                    onPressed: () => Navigator.pop(context),
                   ),
                 ],
+              ),
+            ),
+            Divider(height: 1, color: Tok.borderSoft),
+
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('CLIENT SUBMITTED REQUIREMENTS & CHECKLIST',
+                        style: Tok.label),
+                    const SizedBox(height: 10),
+
+                    StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('inspection_requests')
+                          .doc(widget.docId)
+                          .collection('files')
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          );
+                        }
+                        final docs = snapshot.data!.docs;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Requirements Checklist
+                            WebRequirementsChecklist(
+                              inspectionType: inspectionType,
+                              uploadedCount: docs.length,
+                            ),
+                            const SizedBox(height: 12),
+
+                            if (docs.isEmpty)
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Tok.bg,
+                                  borderRadius: BorderRadius.circular(Tok.rSm),
+                                  border: Border.all(color: Tok.borderSoft),
+                                ),
+                                child: Text(
+                                  'No requirement files uploaded yet by client.',
+                                  style: Tok.bodySm.copyWith(color: Tok.textLo),
+                                ),
+                              )
+                            else ...[
+                              Text('Uploaded Files Preview:', style: Tok.caption),
+                              const SizedBox(height: 8),
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: docs.map((d) {
+                                  final m = d.data() as Map<String, dynamic>;
+                                  final b64 = (m['base64'] ?? '').toString();
+                                  final name = (m['name'] ?? 'Requirement Document').toString();
+                                  if (b64.isEmpty) return const SizedBox.shrink();
+                                  final isPdf = _isPdfData(b64, name);
+
+                                  return InkWell(
+                                    onTap: () => _showEvidenceLightbox(
+                                      context,
+                                      b64,
+                                      const [],
+                                      name,
+                                    ),
+                                    child: Container(
+                                      width: 90,
+                                      height: 90,
+                                      decoration: BoxDecoration(
+                                        color: Tok.bg,
+                                        borderRadius: BorderRadius.circular(Tok.rSm),
+                                        border: Border.all(color: Tok.border),
+                                      ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: isPdf
+                                          ? _buildPdfThumbnail(name)
+                                          : Image.memory(
+                                              base64Decode(b64),
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) =>
+                                                  _buildPdfThumbnail(name),
+                                            ),
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ],
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    Text('REVIEW REMARKS / FEEDBACK', style: Tok.label),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _remarksController,
+                      maxLines: 3,
+                      style: Tok.body,
+                      decoration: InputDecoration(
+                        hintText:
+                            'E.g., "Missing Fire Safety Inspection Certificate. Please upload valid proof." or "Accepted with condition: Submit complete documents within 30 days."',
+                        hintStyle: Tok.bodySm.copyWith(color: Tok.textLo),
+                        filled: true,
+                        fillColor: Tok.bg,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          borderSide: BorderSide(color: Tok.border),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    if (_isSubmitting)
+                      const Center(child: CircularProgressIndicator())
+                    else
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => _processReview(true),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Tok.danger,
+                                side: BorderSide(color: Tok.danger.withValues(alpha: 0.5)),
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(Tok.rMd),
+                                ),
+                              ),
+                              child: const Text(
+                                'Return & Resubmit',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () => _processReview(false),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Tok.brand,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(Tok.rMd),
+                                ),
+                              ),
+                              child: const Text(
+                                'Accept w/ Remark',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -741,7 +1267,10 @@ class _InspectionDetailsDialog extends StatelessWidget {
     final phone = (data['phone'] ?? '—').toString();
     final email = (data['email'] ?? '—').toString();
     final inspector = (data['inspector_name'] ?? 'Unassigned').toString();
+    final scheduledDate = (data['scheduled_date_str'] ?? 'Unscheduled').toString();
+    final adminRemarks = (data['admin_remarks'] ?? 'None').toString();
     final remarks = (data['remarks'] ?? 'No special remarks').toString();
+    final inspectionType = (data['inspection_type'] ?? 'Annual Fire Inspection').toString();
     final sigBase64 = data['client_signature_base64'] as String?;
 
     return Dialog(
@@ -824,11 +1353,22 @@ class _InspectionDetailsDialog extends StatelessWidget {
                           _infoItem('Owner Email', email),
                           _infoItem('Address', address),
                           _infoItem('Assigned Inspector', inspector),
+                          _infoItem('Scheduled Date', scheduledDate),
+                          _infoItem('Admin / Marshal Remarks', adminRemarks),
                           _infoItem('Audit Remarks', remarks),
+                          _infoItem('Certificate Requested', inspectionType),
                         ],
                       ),
                     ),
                     const SizedBox(height: 24),
+
+                    if (data['lat'] != null && data['lng'] != null) ...[
+                      _buildEstablishmentMap(
+                        (data['lat'] as num).toDouble(),
+                        (data['lng'] as num).toDouble(),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
 
                     // Client Requirements Submissions
                     Text('Client Requirement Files', style: Tok.h2),
@@ -850,57 +1390,66 @@ class _InspectionDetailsDialog extends StatelessWidget {
                           );
                         }
                         final docs = snapshot.data!.docs;
-                        if (docs.isEmpty) {
-                          return Container(
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Tok.bg,
-                              borderRadius: BorderRadius.circular(Tok.rSm),
-                              border: Border.all(color: Tok.borderSoft),
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            WebRequirementsChecklist(
+                              inspectionType: inspectionType,
+                              uploadedCount: docs.length,
                             ),
-                            child: Text(
-                              'No requirement files uploaded yet.',
-                              style: Tok.bodySm.copyWith(color: Tok.textLo),
-                            ),
-                          );
-                        }
-                        return Wrap(
-                          spacing: 10,
-                          runSpacing: 10,
-                          children: docs.map((d) {
-                            final m = d.data() as Map<String, dynamic>;
-                            final b64 = (m['base64'] ?? '').toString();
-                            final name = (m['name'] ?? 'Requirement Document').toString();
-                            if (b64.isEmpty) return const SizedBox.shrink();
-                            final isPdf = _isPdfData(b64, name);
-
-                            return InkWell(
-                              onTap: () => _showEvidenceLightbox(
-                                context,
-                                b64,
-                                const [],
-                                name,
-                              ),
-                              child: Container(
-                                width: 110,
-                                height: 110,
+                            if (docs.isEmpty)
+                              Container(
+                                padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
                                   color: Tok.bg,
                                   borderRadius: BorderRadius.circular(Tok.rSm),
-                                  border: Border.all(color: Tok.border),
+                                  border: Border.all(color: Tok.borderSoft),
                                 ),
-                                clipBehavior: Clip.antiAlias,
-                                child: isPdf
-                                    ? _buildPdfThumbnail(name)
-                                    : Image.memory(
-                                        base64Decode(b64),
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) =>
-                                            _buildPdfThumbnail(name),
+                                child: Text(
+                                  'No requirement files uploaded yet.',
+                                  style: Tok.bodySm.copyWith(color: Tok.textLo),
+                                ),
+                              )
+                            else
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 10,
+                                children: docs.map((d) {
+                                  final m = d.data() as Map<String, dynamic>;
+                                  final b64 = (m['base64'] ?? '').toString();
+                                  final name = (m['name'] ?? 'Requirement Document').toString();
+                                  if (b64.isEmpty) return const SizedBox.shrink();
+                                  final isPdf = _isPdfData(b64, name);
+
+                                  return InkWell(
+                                    onTap: () => _showEvidenceLightbox(
+                                      context,
+                                      b64,
+                                      const [],
+                                      name,
+                                    ),
+                                    child: Container(
+                                      width: 110,
+                                      height: 110,
+                                      decoration: BoxDecoration(
+                                        color: Tok.bg,
+                                        borderRadius: BorderRadius.circular(Tok.rSm),
+                                        border: Border.all(color: Tok.border),
                                       ),
+                                      clipBehavior: Clip.antiAlias,
+                                      child: isPdf
+                                          ? _buildPdfThumbnail(name)
+                                          : Image.memory(
+                                              base64Decode(b64),
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) =>
+                                                  _buildPdfThumbnail(name),
+                                            ),
+                                    ),
+                                  );
+                                }).toList(),
                               ),
-                            );
-                          }).toList(),
+                          ],
                         );
                       },
                     ),
@@ -991,14 +1540,22 @@ class _InspectionDetailsDialog extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    status == 'completed'
-                        ? '✅ Inspection completed by $inspector'
-                        : 'Inspection stage: ${status.replaceAll('_', ' ')}',
-                    style: Tok.bodySm.copyWith(
-                      color: status == 'completed' ? Tok.ok : Tok.textLo,
-                      fontWeight: FontWeight.w600,
-                    ),
+                  Row(
+                    children: [
+                      if (status == 'completed') ...[
+                        Icon(Icons.check_circle_rounded, size: 16, color: Tok.ok),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        status == 'completed'
+                            ? 'Inspection completed by $inspector'
+                            : 'Inspection stage: ${status.replaceAll('_', ' ')}',
+                        style: Tok.bodySm.copyWith(
+                          color: status == 'completed' ? Tok.ok : Tok.textLo,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                   ),
                   ElevatedButton(
                     onPressed: () => Navigator.pop(context),
@@ -1018,6 +1575,78 @@ class _InspectionDetailsDialog extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEstablishmentMap(double lat, double lng) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Pinned Establishment Location', style: Tok.h2),
+            InkWell(
+              onTap: () {
+                final url = 'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
+                openBase64InNewTab(url, 'html');
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(Icons.directions_rounded, size: 14, color: Tok.info),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Open Directions / Google Maps',
+                      style: TextStyle(
+                        color: Tok.info,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          height: 200,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(Tok.rMd),
+            border: Border.all(color: Tok.border),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: FlutterMap(
+            options: MapOptions(
+              initialCenter: LatLng(lat, lng),
+              initialZoom: 15.0,
+            ),
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.pyrafullapp.app',
+              ),
+              MarkerLayer(
+                markers: [
+                  Marker(
+                    point: LatLng(lat, lng),
+                    width: 40,
+                    height: 40,
+                    child: const Icon(
+                      Icons.location_on_rounded,
+                      color: Colors.red,
+                      size: 38,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -1123,7 +1752,7 @@ class _InspectionDetailsDialog extends StatelessWidget {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Icon(Icons.psychology_outlined, size: 14, color: Tok.info),
+                    Icon(Icons.center_focus_strong_rounded, size: 14, color: Tok.info),
                     const SizedBox(width: 4),
                     Text(
                       'Roboflow AI Detections:',
@@ -1141,25 +1770,30 @@ class _InspectionDetailsDialog extends StatelessWidget {
                   Wrap(
                     spacing: 6,
                     runSpacing: 6,
-                    children: detections.map((d) {
-                      final cls = (d['class'] ?? 'Equipment').toString();
-                      final pct = (d['confidence_pct'] ?? '').toString();
+                    children: _formatAndDeduplicateDetections(detections).map((item) {
+                      final name = item['name']!;
+                      final pct = item['pct']!;
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Tok.info.withValues(alpha: 0.15),
+                          color: Tok.surfaceAlt,
                           borderRadius: BorderRadius.circular(Tok.rSm),
-                          border: Border.all(
-                            color: Tok.info.withValues(alpha: 0.3),
-                          ),
+                          border: Border.all(color: Tok.border),
                         ),
-                        child: Text(
-                          '🤖 $cls ${pct.isNotEmpty ? "($pct)" : ""}',
-                          style: TextStyle(
-                            color: Tok.textHi,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified_outlined, size: 12, color: Tok.info),
+                            const SizedBox(width: 5),
+                            Text(
+                              pct.isNotEmpty ? '$name $pct' : name,
+                              style: TextStyle(
+                                color: Tok.textHi,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                       );
                     }).toList(),
@@ -1172,6 +1806,43 @@ class _InspectionDetailsDialog extends StatelessWidget {
     );
   }
 }
+
+List<Map<String, String>> _formatAndDeduplicateDetections(List<dynamic> rawDetections) {
+  final Map<String, String> uniqueMap = {};
+
+  for (final d in rawDetections) {
+    if (d is Map) {
+      final rawCls = (d['class'] ?? 'Equipment').toString();
+      final formattedName = rawCls
+          .replaceAll('_', ' ')
+          .split(' ')
+          .map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1))
+          .join(' ');
+
+      final pctRaw = (d['confidence_pct'] ?? '')
+          .toString()
+          .replaceAll('%', '')
+          .replaceAll('(', '')
+          .replaceAll(')', '')
+          .trim();
+      final pctVal = double.tryParse(pctRaw) ?? 0.0;
+      final pctDisplay = pctRaw.isNotEmpty ? '$pctRaw%' : '';
+
+      if (!uniqueMap.containsKey(formattedName)) {
+        uniqueMap[formattedName] = pctDisplay;
+      } else {
+        final existingRaw = uniqueMap[formattedName]!.replaceAll('%', '').trim();
+        final existingVal = double.tryParse(existingRaw) ?? 0.0;
+        if (pctVal > existingVal) {
+          uniqueMap[formattedName] = pctDisplay;
+        }
+      }
+    }
+  }
+
+  return uniqueMap.entries.map((e) => {'name': e.key, 'pct': e.value}).toList();
+}
+
 
 bool _isPdfData(String base64Str, [String? name]) {
   if (name != null && name.toLowerCase().endsWith('.pdf')) return true;
@@ -1383,7 +2054,7 @@ void _showEvidenceLightbox(
                             Row(
                               children: [
                                 Icon(
-                                  Icons.psychology_outlined,
+                                  Icons.center_focus_strong_rounded,
                                   size: 18,
                                   color: Tok.info,
                                 ),
@@ -1402,28 +2073,33 @@ void _showEvidenceLightbox(
                             Wrap(
                               spacing: 6,
                               runSpacing: 6,
-                              children: detections.map((d) {
-                                final cls = (d['class'] ?? 'Object').toString();
-                                final pct = (d['confidence_pct'] ?? '').toString();
+                              children: _formatAndDeduplicateDetections(detections).map((item) {
+                                final name = item['name']!;
+                                final pct = item['pct']!;
                                 return Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
                                     vertical: 4,
                                   ),
                                   decoration: BoxDecoration(
-                                    color: Tok.info.withValues(alpha: 0.15),
+                                    color: Tok.surfaceAlt,
                                     borderRadius: BorderRadius.circular(Tok.rSm),
-                                    border: Border.all(
-                                      color: Tok.info.withValues(alpha: 0.3),
-                                    ),
+                                    border: Border.all(color: Tok.border),
                                   ),
-                                  child: Text(
-                                    '🤖 $cls ${pct.isNotEmpty ? "($pct)" : ""}',
-                                    style: TextStyle(
-                                      color: Tok.textHi,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.verified_outlined, size: 13, color: Tok.info),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        pct.isNotEmpty ? '$name $pct' : name,
+                                        style: TextStyle(
+                                          color: Tok.textHi,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 );
                               }).toList(),

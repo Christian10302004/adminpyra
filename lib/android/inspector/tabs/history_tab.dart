@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import '../../../services/theme_provider.dart';
+import '../../../services/inspector_service.dart';
 import '../inspector_theme.dart';
 import '../audit_sheet.dart';
 
@@ -12,7 +12,8 @@ class HistoryTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Provider.of<ThemeProvider>(context);
-    final User? user = FirebaseAuth.instance.currentUser;
+    final inspectorService = Provider.of<InspectorService>(context);
+    final user = inspectorService.currentUser;
 
     if (user == null) {
       return const EmptyBlock(
@@ -22,33 +23,14 @@ class HistoryTab extends StatelessWidget {
       );
     }
 
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .snapshots(),
+    return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+      stream: inspectorService.streamCompletedInspections(user.uid),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingBlock();
         }
 
-        final allDocs = snapshot.data?.docs ?? const [];
-
-        // Filter completed audits for the current inspector
-        final docs = allDocs.where((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          final status = (data['status'] ?? '').toString();
-          final assignedTo = (data['assigned_to'] ?? '').toString();
-          final inspectorUid = (data['inspector_uid'] ?? '').toString();
-          final repId = (data['representative_id'] ?? '').toString();
-
-          final isTargetInspector =
-              inspectorUid == user.uid ||
-              assignedTo == user.uid ||
-              repId == user.uid ||
-              (assignedTo.isEmpty && inspectorUid.isEmpty);
-
-          return status == 'completed' && isTargetInspector;
-        }).toList();
+        final docs = snapshot.data ?? const [];
 
         if (docs.isEmpty) {
           return const EmptyBlock(
@@ -64,7 +46,7 @@ class HistoryTab extends StatelessWidget {
           separatorBuilder: (_, __) => const SizedBox(height: 8),
           itemBuilder: (context, index) {
             final doc = docs[index];
-            final data = doc.data() as Map<String, dynamic>;
+            final data = doc.data();
             return _HistoryRow(
               data: data,
               onOpen: () => showAuditSheet(

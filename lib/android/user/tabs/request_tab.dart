@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:provider/provider.dart';
+import '../../../services/user_service.dart';
 import '../user_theme.dart';
 
 class RequestTab extends StatefulWidget {
@@ -19,6 +23,7 @@ class _RequestTabState extends State<RequestTab> {
   final _remarksController = TextEditingController();
   String? _selectedBarangay;
   String _inspectionType = 'Annual Fire Inspection';
+  LatLng _pinnedLocation = const LatLng(8.5106, 125.9793);
   bool _isSubmitting = false;
 
   @override
@@ -34,24 +39,22 @@ class _RequestTabState extends State<RequestTab> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isSubmitting = true);
-    final User? user = FirebaseAuth.instance.currentUser;
 
     final String fullAddress =
         "${_streetController.text.trim()}, Barangay $_selectedBarangay, San Francisco, Agusan del Sur";
 
     try {
-      await FirebaseFirestore.instance.collection('inspection_requests').add({
-        'uid': user?.uid,
-        'email': user?.email,
-        'property_name': _propertyNameController.text.trim(),
-        'address': fullAddress,
-        'barangay': _selectedBarangay,
-        'phone': _phoneController.text.trim(),
-        'inspection_type': _inspectionType,
-        'remarks': _remarksController.text.trim(),
-        'status': 'pending_approval',
-        'requested_at': FieldValue.serverTimestamp(),
-      });
+      final userService = Provider.of<UserService>(context, listen: false);
+      await userService.submitInspectionRequest(
+        propertyName: _propertyNameController.text.trim(),
+        address: fullAddress,
+        barangay: _selectedBarangay,
+        phone: _phoneController.text.trim(),
+        inspectionType: _inspectionType,
+        remarks: _remarksController.text.trim(),
+        latitude: _pinnedLocation.latitude,
+        longitude: _pinnedLocation.longitude,
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,12 +152,29 @@ class _RequestTabState extends State<RequestTab> {
             const SizedBox(height: 6),
             _MobileField(
               controller: _phoneController,
-              hint: 'Active mobile number',
+              hint: '09123456789',
               keyboardType: TextInputType.phone,
               textInputAction: TextInputAction.next,
-              validator: (v) => (v == null || v.trim().isEmpty)
-                  ? 'Enter a contact number.'
-                  : null,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(11),
+              ],
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'Enter a contact number.';
+                }
+                final clean = v.trim();
+                if (!clean.startsWith('09')) {
+                  return 'Phone number must start with 09 (e.g., 09123456789).';
+                }
+                if (clean.length != 11) {
+                  return 'Phone number must be exactly 11 digits.';
+                }
+                if (!RegExp(r'^09\d{9}$').hasMatch(clean)) {
+                  return 'Enter a valid 11-digit PH mobile number.';
+                }
+                return null;
+              },
             ),
             const SizedBox(height: 16),
 
@@ -171,9 +191,60 @@ class _RequestTabState extends State<RequestTab> {
             _MobileField(
               controller: _remarksController,
               hint: 'Any specific concerns (optional)',
-              maxLines: 3,
+              maxLines: 2,
             ),
-            const SizedBox(height: 32),
+            const SizedBox(height: 16),
+
+            const _FieldLabel('Pin Establishment Location', required: true),
+            const SizedBox(height: 4),
+            Text(
+              'Tap anywhere on the map below to pin your exact location.',
+              style: Tok.caption.copyWith(color: colors.textLo),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              height: 200,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(Tok.rMd),
+                border: Border.all(color: colors.border),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: FlutterMap(
+                options: MapOptions(
+                  initialCenter: _pinnedLocation,
+                  initialZoom: 14.5,
+                  onTap: (tapPosition, point) {
+                    setState(() => _pinnedLocation = point);
+                  },
+                ),
+                children: [
+                  TileLayer(
+                    urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    userAgentPackageName: 'com.pyrafullapp.app',
+                  ),
+                  MarkerLayer(
+                    markers: [
+                      Marker(
+                        point: _pinnedLocation,
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.location_on_rounded,
+                          color: Colors.red,
+                          size: 38,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Pinned Coordinates: ${_pinnedLocation.latitude.toStringAsFixed(5)}, ${_pinnedLocation.longitude.toStringAsFixed(5)}',
+              style: Tok.caption.copyWith(color: Tok.brand, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 28),
 
             SizedBox(
               height: 48,
@@ -245,6 +316,7 @@ class _MobileField extends StatelessWidget {
   final TextInputAction? textInputAction;
   final TextCapitalization textCapitalization;
   final int maxLines;
+  final List<TextInputFormatter>? inputFormatters;
   final String? Function(String?)? validator;
 
   const _MobileField({
@@ -254,6 +326,7 @@ class _MobileField extends StatelessWidget {
     this.textInputAction,
     this.textCapitalization = TextCapitalization.none,
     this.maxLines = 1,
+    this.inputFormatters,
     this.validator,
   });
 
@@ -266,6 +339,7 @@ class _MobileField extends StatelessWidget {
       textInputAction: textInputAction,
       textCapitalization: textCapitalization,
       maxLines: maxLines,
+      inputFormatters: inputFormatters,
       validator: validator,
       style: Tok.body.copyWith(color: colors.textHi),
       cursorColor: colors.textHi,
@@ -313,10 +387,7 @@ class _BarangayField extends StatelessWidget {
     final colors = context.colors;
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('barangays')
-          .orderBy('name')
-          .snapshots(),
+      stream: Provider.of<UserService>(context, listen: false).streamBarangays(),
       builder: (context, snapshot) {
         final List<String> list = snapshot.hasData
             ? snapshot.data!.docs
@@ -325,7 +396,7 @@ class _BarangayField extends StatelessWidget {
             : <String>[];
 
         return DropdownButtonFormField<String>(
-          value: value,
+          initialValue: value,
           isExpanded: true,
           dropdownColor: colors.surface,
           icon: Icon(Icons.expand_more_rounded,
@@ -391,7 +462,7 @@ class _InspectionTypeField extends StatelessWidget {
     final colors = context.colors;
 
     return DropdownButtonFormField<String>(
-      value: value,
+      initialValue: value,
       isExpanded: true,
       dropdownColor: colors.surface,
       icon: Icon(Icons.expand_more_rounded,

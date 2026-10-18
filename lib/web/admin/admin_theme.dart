@@ -77,6 +77,12 @@ class Tok {
     letterSpacing: -0.1,
     height: 1.25,
   );
+  static TextStyle get h3 => TextStyle(
+    fontFamily: stack,
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
+    color: textHi,
+  );
   static TextStyle get body => TextStyle(
     fontFamily: stack,
     fontSize: 13,
@@ -117,6 +123,213 @@ class Tok {
     color: textHi,
     fontFeatures: const [FontFeature.tabularFigures()],
   );
+}
+
+// ===========================================================================
+// Web Requirements Checklist Widget (Admin & Fire Marshal)
+// ===========================================================================
+class WebRequirementsChecklist extends StatelessWidget {
+  final String inspectionType;
+  final int uploadedCount;
+
+  const WebRequirementsChecklist({
+    super.key,
+    required this.inspectionType,
+    required this.uploadedCount,
+  });
+
+  List<Map<String, String>> _getChecklist() {
+    final type = inspectionType.toLowerCase();
+    if (type.contains('annual')) {
+      return [
+        {
+          'title': 'Previous FSIC',
+          'desc': 'Copy of previous Fire Safety Inspection Certificate',
+        },
+        {
+          'title': 'Business / Mayor\'s Permit',
+          'desc': 'Copy of current Business or Mayor\'s Permit',
+        },
+        {
+          'title': 'Fire Extinguisher Receipt / Certificate',
+          'desc': 'Proof of active fire extinguisher maintenance/purchase',
+        },
+        {
+          'title': 'Fire Safety Maintenance Report (FSMR)',
+          'desc': 'Maintenance logs for building fire protection systems',
+        },
+      ];
+    } else if (type.contains('business')) {
+      return [
+        {
+          'title': 'DTI / SEC / CDA Registration',
+          'desc': 'Certificate of business name registration',
+        },
+        {
+          'title': 'Barangay Business Clearance',
+          'desc': 'Current year Barangay clearance for business',
+        },
+        {
+          'title': 'Occupancy Permit or Building Permit',
+          'desc': 'Approved occupancy or building permit copy',
+        },
+        {
+          'title': 'Fire Extinguisher Receipt / Safety Certificate',
+          'desc': 'Proof of fire safety equipment compliance',
+        },
+      ];
+    } else if (type.contains('installation') || type.contains('new')) {
+      return [
+        {
+          'title': 'Approved Building & Fire Protection Plans',
+          'desc': 'Architectural and fire protection engineering plans',
+        },
+        {
+          'title': 'Building Official Endorsement',
+          'desc': 'Official endorsement from City/Municipal Building Official',
+        },
+        {
+          'title': 'Certificate of Completion',
+          'desc': 'Signed completion certificate by licensed Engineer/Architect',
+        },
+        {
+          'title': 'As-Built Electrical & Plumbing Plans',
+          'desc': 'Certified as-built plans of the building/structure',
+        },
+      ];
+    } else if (type.contains('drill')) {
+      return [
+        {
+          'title': 'Fire Safety & Evacuation Plan (FSEP)',
+          'desc': 'Documented evacuation procedure and safety plan',
+        },
+        {
+          'title': 'Request Letter for Drill Supervision',
+          'desc': 'Formal request letter addressed to Fire Marshal',
+        },
+        {
+          'title': 'Roster of Safety Officers & Participants',
+          'desc': 'List of emergency response team members',
+        },
+        {
+          'title': 'Establishment Floor Plan / Evacuation Route',
+          'desc': 'Diagram showing exit points and assembly areas',
+        },
+      ];
+    } else {
+      return [
+        {
+          'title': 'Valid Government-Issued ID',
+          'desc': 'Proof of identity of applicant or representative',
+        },
+        {
+          'title': 'Proof of Property Ownership / Lease',
+          'desc': 'Title, tax declaration, or lease agreement copy',
+        },
+        {
+          'title': 'Barangay Clearance',
+          'desc': 'Clearance from local barangay',
+        },
+        {
+          'title': 'Fire Extinguisher Receipt / Certificate',
+          'desc': 'Proof of fire safety equipment',
+        },
+      ];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final items = _getChecklist();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Tok.bg,
+        borderRadius: BorderRadius.circular(Tok.rMd),
+        border: Border.all(color: Tok.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.fact_check_outlined, size: 18, color: Tok.brand),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Requirements Checklist ($inspectionType)',
+                  style: Tok.h3.copyWith(fontSize: 13),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: (uploadedCount >= items.length ? Tok.ok : Tok.purple)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(Tok.rSm),
+                ),
+                child: Text(
+                  '$uploadedCount / ${items.length} Submitted',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: uploadedCount >= items.length ? Tok.ok : Tok.purple,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 16,
+            runSpacing: 10,
+            children: List.generate(items.length, (idx) {
+              final item = items[idx];
+              final isDone = idx < uploadedCount;
+              return SizedBox(
+                width: 320,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      isDone
+                          ? Icons.check_circle_rounded
+                          : Icons.check_box_outline_blank_rounded,
+                      size: 16,
+                      color: isDone ? Tok.ok : Tok.textLo,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${idx + 1}. ${item['title']!}',
+                            style: Tok.bodySm.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: Tok.textHi,
+                            ),
+                          ),
+                          Text(
+                            item['desc']!,
+                            style: Tok.caption
+                                .copyWith(color: Tok.textLo, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

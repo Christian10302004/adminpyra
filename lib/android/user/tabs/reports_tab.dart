@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:path_provider/path_provider.dart';
@@ -8,6 +8,7 @@ import 'package:printing/printing.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import '../../../services/web_helper.dart';
+import '../../../services/user_service.dart';
 import '../user_theme.dart';
 
 class ReportsTab extends StatelessWidget {
@@ -28,13 +29,11 @@ class ReportsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final User? user = FirebaseAuth.instance.currentUser;
+    final userService = Provider.of<UserService>(context);
+    final user = userService.currentUser;
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .where('uid', isEqualTo: user?.uid)
-          .snapshots(),
+      stream: userService.streamUserInspectionRequests(user?.uid ?? ''),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingBlock();
@@ -80,6 +79,8 @@ class ReportsTab extends StatelessWidget {
       case 'pending_approval':              return Tok.warn;
       case 'approved_waiting_requirements': return Tok.info;
       case 'requirements_submitted':        return Tok.purple;
+      case 'resubmission_required':         return Tok.danger;
+      case 'requirements_accepted_conditional': return Tok.warn;
       case 'assigned':                      return Tok.indigo;
       case 'completed':                     return Tok.ok;
       default:                              return context.colors.textLo;
@@ -91,6 +92,8 @@ class ReportsTab extends StatelessWidget {
       case 'pending_approval':              return Icons.hourglass_empty_rounded;
       case 'approved_waiting_requirements': return Icons.upload_file_outlined;
       case 'requirements_submitted':        return Icons.fact_check_outlined;
+      case 'resubmission_required':         return Icons.replay_rounded;
+      case 'requirements_accepted_conditional': return Icons.assignment_late_outlined;
       case 'assigned':                      return Icons.person_pin_circle_outlined;
       case 'completed':                     return Icons.verified_outlined;
       default:                              return Icons.assignment_outlined;
@@ -129,6 +132,10 @@ class _ReportTile extends StatelessWidget {
         return 'Awaiting Requirements';
       case 'requirements_submitted':
         return 'Requirements Submitted';
+      case 'resubmission_required':
+        return 'Resubmission Required';
+      case 'requirements_accepted_conditional':
+        return 'Accepted (Conditional)';
       case 'assigned':
         return 'Assigned';
       default:
@@ -192,18 +199,33 @@ class _ReportTile extends StatelessWidget {
 
       const SizedBox(height: 16),
 
-      if (rawStatus == 'approved_waiting_requirements')
+      if (data['admin_remarks'] != null && (data['admin_remarks'] as String).isNotEmpty) ...[
+        _InfoBanner(
+          icon: rawStatus == 'resubmission_required' ? Icons.warning_amber_rounded : Icons.info_outline,
+          color: rawStatus == 'resubmission_required' ? Tok.danger : Tok.warn,
+          message: 'BFP Remarks: ${data['admin_remarks']}',
+        ),
+        const SizedBox(height: 12),
+      ],
+
+      if (rawStatus == 'pending_approval')
+        _RequirementsChecklistCard(
+          inspectionType: (data['inspection_type'] ?? 'Annual Fire Inspection').toString(),
+          uploadedCount: 0,
+        ),
+
+      if (rawStatus == 'approved_waiting_requirements' || rawStatus == 'resubmission_required')
         _RequirementUpload(
           docId: docId,
+          inspectionType: (data['inspection_type'] ?? 'Annual Fire Inspection').toString(),
           onUpload: onUploadRequirement,
           onSubmit: onSubmitRequirements,
         ),
 
       if (rawStatus == 'requirements_submitted')
-        _InfoBanner(
-          icon: Icons.check_circle_outline,
-          color: Tok.purple,
-          message: 'Requirements uploaded. Waiting for an inspector to be assigned.',
+        _RequirementSubmittedCard(
+          docId: docId,
+          inspectionType: (data['inspection_type'] ?? 'Annual Fire Inspection').toString(),
         ),
 
       if (data['evidence_base64'] != null) ...[
@@ -722,10 +744,12 @@ class _InfoBanner extends StatelessWidget {
 // ===========================================================================
 class _RequirementUpload extends StatelessWidget {
   final String docId;
+  final String inspectionType;
   final Future<void> Function(String) onUpload;
   final Future<void> Function(String) onSubmit;
   const _RequirementUpload({
     required this.docId,
+    required this.inspectionType,
     required this.onUpload,
     required this.onSubmit,
   });
@@ -735,11 +759,8 @@ class _RequirementUpload extends StatelessWidget {
     final colors = context.colors;
 
     return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .doc(docId)
-          .collection('files')
-          .snapshots(),
+      stream: Provider.of<UserService>(context, listen: false)
+          .streamRequestFiles(docId),
       builder: (context, snapshot) {
         final docs = snapshot.hasData ? snapshot.data!.docs : const [];
 
@@ -756,6 +777,11 @@ class _RequirementUpload extends StatelessWidget {
               Text(
                 'Upload up to 5 photos or files. Max 1 MB each.',
                 style: Tok.caption.copyWith(color: colors.textLo),
+              ),
+              const SizedBox(height: 8),
+              _RequirementsChecklistCard(
+                inspectionType: inspectionType,
+                uploadedCount: docs.length,
               ),
               const SizedBox(height: 12),
               Wrap(
@@ -826,12 +852,8 @@ class _RequirementUpload extends StatelessWidget {
                           child: GestureDetector(
                             onTap: () async {
                               try {
-                                await FirebaseFirestore.instance
-                                    .collection('inspection_requests')
-                                    .doc(docId)
-                                    .collection('files')
-                                    .doc(doc.id)
-                                    .delete();
+                                await Provider.of<UserService>(context, listen: false)
+                                    .deleteRequirementFile(docId: docId, fileId: doc.id);
                                 if (context.mounted) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
@@ -1009,6 +1031,255 @@ class EmptyBlock extends StatelessWidget {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ===========================================================================
+// Requirement Submitted Card
+// ===========================================================================
+class _RequirementSubmittedCard extends StatelessWidget {
+  final String docId;
+  final String inspectionType;
+
+  const _RequirementSubmittedCard({
+    required this.docId,
+    required this.inspectionType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot>(
+      stream: Provider.of<UserService>(context, listen: false)
+          .streamRequestFiles(docId),
+      builder: (context, snapshot) {
+        final docs = snapshot.hasData ? snapshot.data!.docs : const [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _InfoBanner(
+              icon: Icons.check_circle_outline,
+              color: Tok.purple,
+              message:
+                  'Requirements uploaded (${docs.length} file${docs.length == 1 ? "" : "s"}). Waiting for an inspector to be assigned.',
+            ),
+            _RequirementsChecklistCard(
+              inspectionType: inspectionType,
+              uploadedCount: docs.length,
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ===========================================================================
+// Requirements Checklist Card
+// ===========================================================================
+class _RequirementsChecklistCard extends StatelessWidget {
+  final String inspectionType;
+  final int uploadedCount;
+
+  const _RequirementsChecklistCard({
+    required this.inspectionType,
+    required this.uploadedCount,
+  });
+
+  List<Map<String, String>> _getChecklist() {
+    final type = inspectionType.toLowerCase();
+    if (type.contains('annual')) {
+      return [
+        {
+          'title': 'Previous FSIC',
+          'desc': 'Copy of previous Fire Safety Inspection Certificate',
+        },
+        {
+          'title': 'Business / Mayor\'s Permit',
+          'desc': 'Copy of current Business or Mayor\'s Permit',
+        },
+        {
+          'title': 'Fire Extinguisher Receipt / Certificate',
+          'desc': 'Proof of active fire extinguisher maintenance/purchase',
+        },
+        {
+          'title': 'Fire Safety Maintenance Report (FSMR)',
+          'desc': 'Maintenance logs for building fire protection systems',
+        },
+      ];
+    } else if (type.contains('business')) {
+      return [
+        {
+          'title': 'DTI / SEC / CDA Registration',
+          'desc': 'Certificate of business name registration',
+        },
+        {
+          'title': 'Barangay Business Clearance',
+          'desc': 'Current year Barangay clearance for business',
+        },
+        {
+          'title': 'Occupancy Permit or Building Permit',
+          'desc': 'Approved occupancy or building permit copy',
+        },
+        {
+          'title': 'Fire Extinguisher Receipt / Safety Certificate',
+          'desc': 'Proof of fire safety equipment compliance',
+        },
+      ];
+    } else if (type.contains('installation') || type.contains('new')) {
+      return [
+        {
+          'title': 'Approved Building & Fire Protection Plans',
+          'desc': 'Architectural and fire protection engineering plans',
+        },
+        {
+          'title': 'Building Official Endorsement',
+          'desc': 'Official endorsement from City/Municipal Building Official',
+        },
+        {
+          'title': 'Certificate of Completion',
+          'desc': 'Signed completion certificate by licensed Engineer/Architect',
+        },
+        {
+          'title': 'As-Built Electrical & Plumbing Plans',
+          'desc': 'Certified as-built plans of the building/structure',
+        },
+      ];
+    } else if (type.contains('drill')) {
+      return [
+        {
+          'title': 'Fire Safety & Evacuation Plan (FSEP)',
+          'desc': 'Documented evacuation procedure and safety plan',
+        },
+        {
+          'title': 'Request Letter for Drill Supervision',
+          'desc': 'Formal request letter addressed to Fire Marshal',
+        },
+        {
+          'title': 'Roster of Safety Officers & Participants',
+          'desc': 'List of emergency response team members',
+        },
+        {
+          'title': 'Establishment Floor Plan / Evacuation Route',
+          'desc': 'Diagram showing exit points and assembly areas',
+        },
+      ];
+    } else {
+      return [
+        {
+          'title': 'Valid Government-Issued ID',
+          'desc': 'Proof of identity of applicant or representative',
+        },
+        {
+          'title': 'Proof of Property Ownership / Lease',
+          'desc': 'Title, tax declaration, or lease agreement copy',
+        },
+        {
+          'title': 'Barangay Clearance',
+          'desc': 'Clearance from local barangay',
+        },
+        {
+          'title': 'Fire Extinguisher Receipt / Certificate',
+          'desc': 'Proof of fire safety equipment',
+        },
+      ];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    final items = _getChecklist();
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 10, bottom: 6),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: colors.bg,
+        borderRadius: BorderRadius.circular(Tok.rSm),
+        border: Border.all(color: colors.borderSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.fact_check_outlined, size: 18, color: Tok.brand),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Required Documents Checklist',
+                  style: Tok.h3.copyWith(color: colors.textHi, fontSize: 13),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: (uploadedCount >= items.length ? Tok.ok : Tok.warn)
+                      .withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(Tok.rSm),
+                ),
+                child: Text(
+                  '$uploadedCount / ${items.length} Submitted',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: uploadedCount >= items.length ? Tok.ok : Tok.warn,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Checklist of requirements for $inspectionType:',
+            style: Tok.caption.copyWith(color: colors.textLo, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          ...List.generate(items.length, (idx) {
+            final item = items[idx];
+            final isDone = idx < uploadedCount;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8.0),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    isDone
+                        ? Icons.check_circle_rounded
+                        : Icons.check_box_outline_blank_rounded,
+                    size: 16,
+                    color: isDone ? Tok.ok : colors.textLo,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${idx + 1}. ${item['title']!}',
+                          style: Tok.bodySm.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: colors.textHi,
+                            decoration:
+                                isDone ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                        Text(
+                          item['desc']!,
+                          style: Tok.caption
+                              .copyWith(color: colors.textLo, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

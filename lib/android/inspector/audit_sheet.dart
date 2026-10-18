@@ -1,14 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
 import 'dart:io';
-import 'dart:convert';
 import 'package:provider/provider.dart';
-import '../../services/offline_service.dart';
+import '../../services/inspector_service.dart';
 import '../../services/roboflow_service.dart';
 import '../../services/theme_provider.dart';
 import 'inspector_theme.dart';
@@ -197,93 +193,23 @@ class _AuditSheetState extends State<_AuditSheet> {
       _readinessHint = null;
     });
 
+    final inspectorService = Provider.of<InspectorService>(context, listen: false);
+
     try {
       final Uint8List? sigBytes = await _signatureController.toPngBytes();
-      final String? sigBase64 = sigBytes != null ? base64Encode(sigBytes) : null;
 
-      String? primaryEvidenceBase64;
-      if (_evidenceImages.isNotEmpty) {
-        try {
-          final firstBytes = await _evidenceImages.first.readAsBytes();
-          if (firstBytes.length <= 750000) {
-            primaryEvidenceBase64 = base64Encode(firstBytes);
-          }
-        } catch (e) {
-          debugPrint('Error encoding primary evidence image: $e');
-        }
-      }
+      final isOnline = await inspectorService.finalizeAudit(
+        docId: widget.docId,
+        signatureBytes: sigBytes,
+        evidenceImages: _evidenceImages,
+        evidenceDetections: _evidenceDetections,
+      );
 
-      final connectivity = await Connectivity().checkConnectivity();
-      final isOffline = connectivity.contains(ConnectivityResult.none);
-
-      final User? currentUser = FirebaseAuth.instance.currentUser;
-      final Map<String, dynamic> updatePayload = {
-        'status': 'completed',
-        if (currentUser?.uid != null) 'inspector_uid': currentUser!.uid,
-        if (currentUser?.email != null) 'inspector_email': currentUser!.email,
-        if (currentUser?.displayName != null) 'inspector_name': currentUser!.displayName,
-        'inspected_at': isOffline
-            ? DateTime.now().toIso8601String()
-            : FieldValue.serverTimestamp(),
-        'client_signature_base64': sigBase64,
-        if (primaryEvidenceBase64 != null) 'evidence_base64': primaryEvidenceBase64,
-        'has_evidence': true,
-        'evidence_count': _evidenceImages.length,
-      };
-
-      if (isOffline) {
-        await OfflineService.addToQueue('completion', widget.docId, updatePayload);
-        for (final image in _evidenceImages) {
-          final bytes = await image.readAsBytes();
-          final detectionsList = _evidenceDetections[image.path]?.map((p) => {
-            'class': p.className,
-            'confidence': p.confidence,
-            'confidence_pct': p.confidencePercentage,
-            'x': p.x,
-            'y': p.y,
-            'width': p.width,
-            'height': p.height,
-          }).toList() ?? [];
-
-          if (bytes.length <= 750000) {
-            await OfflineService.addToQueue('evidence', widget.docId, {
-              'base64': base64Encode(bytes),
-              'detections': detectionsList,
-              'uploaded_at': DateTime.now().toIso8601String(),
-            });
-          }
-        }
-        _showSnack('Saved locally. Will sync when online.', Tok.info);
-      } else {
-        await FirebaseFirestore.instance
-            .collection('inspection_requests')
-            .doc(widget.docId)
-            .update(updatePayload);
-        for (final image in _evidenceImages) {
-          final bytes = await image.readAsBytes();
-          final detectionsList = _evidenceDetections[image.path]?.map((p) => {
-            'class': p.className,
-            'confidence': p.confidence,
-            'confidence_pct': p.confidencePercentage,
-            'x': p.x,
-            'y': p.y,
-            'width': p.width,
-            'height': p.height,
-          }).toList() ?? [];
-
-          if (bytes.length <= 750000) {
-            await FirebaseFirestore.instance
-                .collection('inspection_requests')
-                .doc(widget.docId)
-                .collection('evidence')
-                .add({
-              'base64': base64Encode(bytes),
-              'detections': detectionsList,
-              'uploaded_at': FieldValue.serverTimestamp(),
-            });
-          }
-        }
+      if (!mounted) return;
+      if (isOnline) {
         _showSnack('Audit finalized.', Tok.ok);
+      } else {
+        _showSnack('Saved locally. Will sync when online.', Tok.info);
       }
 
       if (!mounted) return;

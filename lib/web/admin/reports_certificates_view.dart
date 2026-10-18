@@ -431,10 +431,12 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
     }
   }
 
-  void _viewUserFiles(BuildContext context, String docId) {
+  void _viewUserFiles(BuildContext context, String docId, [Map<String, dynamic>? data]) {
+    final certType = (data?['inspection_type'] ?? 'Annual Fire Inspection').toString();
     _showMediaDialog(
       title: 'Client requirements',
-      subtitle: 'Files uploaded by the property owner',
+      subtitle: 'Files uploaded by property owner · Certificate Requested: $certType',
+      inspectionType: certType,
       stream: FirebaseFirestore.instance
           .collection('inspection_requests')
           .doc(docId)
@@ -608,6 +610,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
   void _showMediaDialog({
     required String title,
     String? subtitle,
+    String? inspectionType,
     Stream<QuerySnapshot>? stream,
     List<_MediaItem>? items,
     String? emptyLabel,
@@ -622,7 +625,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
           side: BorderSide(color: Tok.border),
         ),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 860, maxHeight: 640),
+          constraints: const BoxConstraints(maxWidth: 860, maxHeight: 680),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -680,12 +683,6 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                       );
                     }
                     final docs = snapshot.data!.docs;
-                    if (docs.isEmpty) {
-                      return EmptyState(
-                        icon: Icons.image_outlined,
-                        label: emptyLabel ?? 'No files were found.',
-                      );
-                    }
                     final list = docs.map((d) {
                       final map = d.data() as Map<String, dynamic>;
                       return _MediaItem(
@@ -693,7 +690,27 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                         base64: map['base64'].toString(),
                       );
                     }).toList();
-                    return _MediaGrid(items: list);
+
+                    return SingleChildScrollView(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (inspectionType != null)
+                            WebRequirementsChecklist(
+                              inspectionType: inspectionType,
+                              uploadedCount: list.length,
+                            ),
+                          if (docs.isEmpty)
+                            EmptyState(
+                              icon: Icons.image_outlined,
+                              label: emptyLabel ?? 'No files were found.',
+                            )
+                          else
+                            _MediaGrid(items: list),
+                        ],
+                      ),
+                    );
                   },
                 ),
               ),
@@ -1079,7 +1096,7 @@ class _CertIndicator extends StatelessWidget {
 class _MarshalQueue extends StatelessWidget {
   final void Function(Map<String, dynamic> data) onReview;
   final Future<void> Function(String docId) onIssue;
-  final void Function(BuildContext context, String docId) onViewUserFiles;
+  final void Function(BuildContext context, String docId, [Map<String, dynamic>? data]) onViewUserFiles;
   final void Function(String base64) onViewInspectionPhoto;
   final String searchQuery;
 
@@ -1178,7 +1195,7 @@ class _MarshalQueue extends StatelessWidget {
                     onReview: () => onReview(data),
                     onIssue: () => onIssue(doc.id),
                     onViewUserFiles: () =>
-                        onViewUserFiles(context, doc.id),
+                        onViewUserFiles(context, doc.id, data),
                     onViewInspectionPhoto:
                     data['evidence_base64'] != null
                         ? () => onViewInspectionPhoto(

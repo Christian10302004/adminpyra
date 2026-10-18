@@ -21,6 +21,8 @@ import 'android/login/android_login_page.dart';
 import 'android/inspector/inspector_home.dart';
 import 'android/inspector/inspector_theme.dart' as inspector_theme;
 import 'services/auth_service.dart';
+import 'services/user_service.dart';
+import 'services/inspector_service.dart';
 import 'services/roboflow_service.dart';
 import 'services/theme_provider.dart';
 
@@ -74,6 +76,8 @@ void main() async {
     MultiProvider(
       providers: [
         Provider<AuthService>(create: (_) => AuthService()),
+        Provider<UserService>(create: (_) => UserService()),
+        Provider<InspectorService>(create: (_) => InspectorService()),
         Provider<RoboflowService>(create: (_) => RoboflowService()),
         ChangeNotifierProvider<ThemeProvider>(
           create: (_) => ThemeProvider(initialMode: initialMode),

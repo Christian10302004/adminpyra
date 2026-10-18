@@ -316,10 +316,11 @@ class _BarangayManagementViewState extends State<BarangayManagementView> {
                                     color: Tok.textLo,
                                     size: 18,
                                   ),
-                                  onPressed: () => FirebaseFirestore.instance
-                                      .collection('barangays')
-                                      .doc(docs[index].id)
-                                      .delete(),
+                                  onPressed: () => _confirmDeleteBarangay(
+                                    context,
+                                    docs[index].id,
+                                    (data['name'] ?? 'Barangay').toString(),
+                                  ),
                                 ),
                               ],
                             ),
@@ -350,6 +351,62 @@ class _BarangayManagementViewState extends State<BarangayManagementView> {
                 ],
               );
             },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _confirmDeleteBarangay(BuildContext context, String docId, String name) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: Tok.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tok.rLg),
+          side: BorderSide(color: Tok.border),
+        ),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Tok.danger, size: 22),
+            const SizedBox(width: 8),
+            Text('Delete Barangay', style: Tok.h2),
+          ],
+        ),
+        content: Text(
+          'Are you sure you want to delete "$name"? This action cannot be undone.',
+          style: Tok.body,
+        ),
+        actions: [
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Tok.textHi,
+              side: BorderSide(color: Tok.border),
+            ),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              await FirebaseFirestore.instance
+                  .collection('barangays')
+                  .doc(docId)
+                  .delete();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Barangay "$name" deleted successfully.'),
+                    backgroundColor: Tok.ok,
+                  ),
+                );
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Tok.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
           ),
         ],
       ),

@@ -221,6 +221,10 @@ class StatusTag extends StatelessWidget {
         return Tok.info;
       case 'requirements_submitted':
         return Tok.purple;
+      case 'resubmission_required':
+        return Tok.danger;
+      case 'requirements_accepted_conditional':
+        return Tok.warn;
       case 'assigned':
         return Tok.info;
       case 'completed':
@@ -238,6 +242,10 @@ class StatusTag extends StatelessWidget {
         return 'Awaiting docs';
       case 'requirements_submitted':
         return 'Submitted';
+      case 'resubmission_required':
+        return 'Resubmit Required';
+      case 'requirements_accepted_conditional':
+        return 'Accepted w/ Remark';
       case 'assigned':
         return 'Assigned';
       case 'completed':

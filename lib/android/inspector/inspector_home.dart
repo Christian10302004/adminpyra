@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
-import '../../services/auth_service.dart';
-import '../../services/offline_service.dart';
+import '../../services/inspector_service.dart';
 import '../../services/theme_provider.dart';
 import '../../models/user_model.dart';
 import 'inspector_theme.dart';
@@ -23,20 +22,19 @@ class _InspectorHomeState extends State<InspectorHome> {
   @override
   void initState() {
     super.initState();
-    _checkAndSync();
-  }
-
-  Future<void> _checkAndSync() async {
-    await OfflineService.syncOfflineData();
-    if (mounted) setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<InspectorService>().syncOfflineData();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final isDark = themeProvider.isDarkMode;
-    final authService = Provider.of<AuthService>(context);
-    final User? user = FirebaseAuth.instance.currentUser;
+    final inspectorService = Provider.of<InspectorService>(context);
+    final User? user = inspectorService.currentUser;
 
     return Scaffold(
       backgroundColor: Tok.bg,
@@ -50,7 +48,7 @@ class _InspectorHomeState extends State<InspectorHome> {
         shape: Border(bottom: BorderSide(color: Tok.border)),
         actions: [
           FutureBuilder<int>(
-            future: OfflineService.getQueueCount(),
+            future: inspectorService.getOfflineQueueCount(),
             builder: (context, snapshot) {
               final count = snapshot.data ?? 0;
               if (count == 0) return const SizedBox();
@@ -72,7 +70,7 @@ class _InspectorHomeState extends State<InspectorHome> {
                       behavior: SnackBarBehavior.floating,
                     ),
                   );
-                  await OfflineService.syncOfflineData();
+                  await inspectorService.syncOfflineData();
                   if (mounted) setState(() {});
                 },
               );
@@ -84,7 +82,7 @@ class _InspectorHomeState extends State<InspectorHome> {
       drawer: _InspectorDrawer(
         selectedIndex: _selectedIndex,
         user: user,
-        authService: authService,
+        inspectorService: inspectorService,
         onSelect: (i) => setState(() => _selectedIndex = i),
       ),
       body: IndexedStack(
@@ -116,13 +114,13 @@ class _InspectorHomeState extends State<InspectorHome> {
 class _InspectorDrawer extends StatelessWidget {
   final int selectedIndex;
   final User? user;
-  final AuthService authService;
+  final InspectorService inspectorService;
   final ValueChanged<int> onSelect;
 
   const _InspectorDrawer({
     required this.selectedIndex,
     required this.user,
-    required this.authService,
+    required this.inspectorService,
     required this.onSelect,
   });
 
@@ -138,7 +136,7 @@ class _InspectorDrawer extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             FutureBuilder<UserModel?>(
-              future: authService.getUserData(user?.uid ?? ''),
+              future: inspectorService.getInspectorProfile(user?.uid ?? ''),
               builder: (context, snapshot) {
                 final userModel = snapshot.data;
                 return Padding(
@@ -249,7 +247,7 @@ class _InspectorDrawer extends StatelessWidget {
               destructive: true,
               onTap: () {
                 Navigator.pop(context);
-                _showSignOutDialog(context, authService);
+                _showSignOutDialog(context, inspectorService);
               },
             ),
             const SizedBox(height: 12),
@@ -259,7 +257,7 @@ class _InspectorDrawer extends StatelessWidget {
     );
   }
 
-  void _showSignOutDialog(BuildContext context, AuthService authService) {
+  void _showSignOutDialog(BuildContext context, InspectorService inspectorService) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -299,7 +297,7 @@ class _InspectorDrawer extends StatelessWidget {
             ),
             onPressed: () async {
               Navigator.pop(dialogContext);
-              await authService.signOut();
+              await inspectorService.signOut();
             },
             child: const Text(
               'Sign out',

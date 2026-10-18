@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
+import '../../../services/inspector_service.dart';
 import '../../../services/theme_provider.dart';
 import '../inspector_theme.dart';
 
@@ -10,7 +10,8 @@ class SettingsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Provider.of<ThemeProvider>(context);
-    final User? user = FirebaseAuth.instance.currentUser;
+    final inspectorService = Provider.of<InspectorService>(context);
+    final user = inspectorService.currentUser;
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 32),
       child: Column(
@@ -197,7 +198,7 @@ class SettingsTab extends StatelessWidget {
             ),
             onPressed: () async {
               Navigator.pop(dialogContext);
-              await FirebaseAuth.instance.signOut();
+              await context.read<InspectorService>().signOut();
             },
             child: const Text(
               'Sign out',
