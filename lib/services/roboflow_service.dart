@@ -70,42 +70,67 @@ class RoboflowResponse {
 /// Roboflow API Integration Service for Computer Vision / Object Detection
 class RoboflowService {
   String apiKey;
+  String workspace;
   String modelId;
   String version;
 
+  // Caches the working base URL after initial auto-discovery
+  String? _workingBaseUrl;
+
   RoboflowService({
     this.apiKey = 'raFpQPwkCGYNWepqcp7o',
-    this.modelId = 'pyracheck-fire-safety-detection-owr2k',
-    this.version = '2',
+    this.workspace = 'chrxtian-dapetilla',
+    this.modelId = 'pyracheck-fire-safety-detection-owr2k-5-yolo26s-t1',
+    this.version = '5',
   });
+
+  List<String> get _candidateBaseUrls {
+    if (_workingBaseUrl != null) return [_workingBaseUrl!];
+
+    final cleanId = modelId.contains('/') ? modelId.split('/').last : modelId;
+    return [
+      'https://detect.roboflow.com/$cleanId/$version',
+      if (workspace.isNotEmpty)
+        'https://detect.roboflow.com/$workspace/$cleanId/$version',
+      'https://detect.roboflow.com/$cleanId/1',
+      if (workspace.isNotEmpty)
+        'https://detect.roboflow.com/$workspace/$cleanId/1',
+      'https://detect.roboflow.com/pyracheck-fire-safety-detection-owr2k/$version',
+      if (workspace.isNotEmpty)
+        'https://detect.roboflow.com/$workspace/pyracheck-fire-safety-detection-owr2k/$version',
+      'https://detect.roboflow.com/pyracheck-fire-safety-detection/$version',
+    ];
+  }
 
   /// Runs Roboflow computer vision object detection on raw image bytes.
   /// Works across Android, iOS, and Web platforms.
   Future<RoboflowResponse?> detectFromBytes(
     Uint8List bytes, {
-    double confidenceThreshold = 0.25,
+    double confidenceThreshold = 0.30,
   }) async {
     try {
       final String base64Image = base64Encode(bytes);
-      final Uri uri = Uri.parse(
-        'https://detect.roboflow.com/$modelId/$version?api_key=$apiKey&confidence=${(confidenceThreshold * 100).toInt()}',
-      );
+      final int confidencePct = (confidenceThreshold * 100).toInt();
 
-      final response = await http.post(
-        uri,
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: base64Image,
-      );
+      for (final baseUrl in _candidateBaseUrls) {
+        final uri = Uri.parse('$baseUrl?api_key=$apiKey&confidence=$confidencePct');
+        final response = await http.post(
+          uri,
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: base64Image,
+        );
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = jsonDecode(response.body);
-        return RoboflowResponse.fromMap(data);
-      } else {
-        debugPrint('Roboflow API Error [${response.statusCode}]: ${response.body}');
-        return null;
+        if (response.statusCode == 200) {
+          _workingBaseUrl = baseUrl;
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          return RoboflowResponse.fromMap(data);
+        } else {
+          debugPrint('Roboflow API [$baseUrl] Error [${response.statusCode}]: ${response.body}');
+        }
       }
+      return null;
     } catch (e) {
       debugPrint('Roboflow Exception: $e');
       return null;
@@ -118,19 +143,23 @@ class RoboflowService {
     double confidenceThreshold = 0.25,
   }) async {
     try {
-      final Uri uri = Uri.parse(
-        'https://detect.roboflow.com/$modelId/$version?api_key=$apiKey&image=${Uri.encodeComponent(imageUrl)}&confidence=${(confidenceThreshold * 100).toInt()}',
-      );
+      final int confidencePct = (confidenceThreshold * 100).toInt();
 
-      final response = await http.post(uri);
+      for (final baseUrl in _candidateBaseUrls) {
+        final uri = Uri.parse(
+          '$baseUrl?api_key=$apiKey&image=${Uri.encodeComponent(imageUrl)}&confidence=$confidencePct',
+        );
+        final response = await http.get(uri);
 
-      if (response.statusCode == 200) {
-        final Map<String, dynamic> data = jsonDecode(response.body);
-        return RoboflowResponse.fromMap(data);
-      } else {
-        debugPrint('Roboflow API Error [${response.statusCode}]: ${response.body}');
-        return null;
+        if (response.statusCode == 200) {
+          _workingBaseUrl = baseUrl;
+          final Map<String, dynamic> data = jsonDecode(response.body);
+          return RoboflowResponse.fromMap(data);
+        } else {
+          debugPrint('Roboflow API [$baseUrl] Error [${response.statusCode}]: ${response.body}');
+        }
       }
+      return null;
     } catch (e) {
       debugPrint('Roboflow Exception: $e');
       return null;

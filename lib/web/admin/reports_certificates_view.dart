@@ -1966,13 +1966,20 @@ class _AuditColumn extends StatelessWidget {
                                                       borderRadius: BorderRadius.circular(Tok.rSm),
                                                       border: Border.all(color: Tok.info.withValues(alpha: 0.3)),
                                                     ),
-                                                    child: Text(
-                                                      '🤖 $cls ${pct.isNotEmpty ? "($pct)" : ""}',
-                                                      style: TextStyle(
-                                                        color: Tok.textHi,
-                                                        fontSize: 11,
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
+                                                    child: Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Icon(Icons.smart_toy_outlined, size: 12, color: Tok.info),
+                                                        const SizedBox(width: 4),
+                                                        Text(
+                                                          '$cls ${pct.isNotEmpty ? "($pct)" : ""}',
+                                                          style: TextStyle(
+                                                            color: Tok.textHi,
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.w500,
+                                                          ),
+                                                        ),
+                                                      ],
                                                     ),
                                                   );
                                                 }).toList(),
@@ -2063,13 +2070,20 @@ class _AuditColumn extends StatelessWidget {
                               color: const Color(0xB3000000),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: Text(
-                              '🤖 ${detections.length}',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.smart_toy_outlined, size: 11, color: Colors.white),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '${detections.length}',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

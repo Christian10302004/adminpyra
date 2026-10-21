@@ -703,8 +703,6 @@ class _TopBar extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(width: 6),
-              Icon(Icons.expand_more_rounded, size: 16, color: Tok.textLo),
             ],
           ),
         ],

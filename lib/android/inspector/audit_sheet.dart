@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:signature/signature.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
 import 'package:provider/provider.dart';
 import '../../services/inspector_service.dart';
@@ -323,6 +326,78 @@ class _AuditSheetState extends State<_AuditSheet> {
                     _Def(label: 'Remarks', value: data['remarks'] ?? 'No special remarks'),
                   ]),
 
+                  if (data['lat'] != null && data['lng'] != null) ...[
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Pinned Location', style: Tok.h3),
+                        InkWell(
+                          onTap: () {
+                            final lat = (data['lat'] as num).toDouble();
+                            final lng = (data['lng'] as num).toDouble();
+                            final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+                            launchUrl(uri, mode: LaunchMode.externalApplication);
+                          },
+                          child: Row(
+                            children: [
+                              Icon(Icons.directions_rounded, size: 14, color: Tok.brandSoft),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Directions',
+                                style: Tok.caption.copyWith(
+                                  color: Tok.brandSoft,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 180,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(Tok.rMd),
+                        border: Border.all(color: Tok.border),
+                      ),
+                      clipBehavior: Clip.antiAlias,
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: LatLng(
+                            (data['lat'] as num).toDouble(),
+                            (data['lng'] as num).toDouble(),
+                          ),
+                          initialZoom: 15.0,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            userAgentPackageName: 'com.pyrafullapp.app',
+                          ),
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: LatLng(
+                                  (data['lat'] as num).toDouble(),
+                                  (data['lng'] as num).toDouble(),
+                                ),
+                                width: 40,
+                                height: 40,
+                                child: const Icon(
+                                  Icons.location_on_rounded,
+                                  color: Colors.red,
+                                  size: 38,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   if (canFinalize) ...[
                     const SizedBox(height: 24),
                     Row(
@@ -543,13 +618,20 @@ class _EvidenceStrip extends StatelessWidget {
                             color: Tok.ok.withValues(alpha: 0.85),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: Text(
-                            '🤖 ${detectedList.length}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.smart_toy_outlined, size: 11, color: Colors.white),
+                              const SizedBox(width: 3),
+                              Text(
+                                '${detectedList.length}',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
@@ -688,6 +770,57 @@ class _AiDetectionResultsCard extends StatelessWidget {
     );
   }
 
+  bool _isHazardClass(String className) {
+    final lower = className.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
+    return lower.contains('cigarette') ||
+        lower.contains('firecracker') ||
+        lower.contains('flammable') ||
+        lower.contains('lighter') ||
+        lower.contains('loaded outlet') ||
+        lower.contains('overload') ||
+        lower.contains('exposed wiring') ||
+        lower.contains('exposed wired') ||
+        lower.contains('wiring') ||
+        lower.contains('wired') ||
+        lower.contains('damaged wire') ||
+        lower.contains('spark') ||
+        lower.contains('bidon') ||
+        lower.contains('hazard') ||
+        lower.contains('combustible') ||
+        lower.contains('danger');
+  }
+
+  String _formatClassName(String rawCls) {
+    String clean = rawCls
+        .replaceAll('sparks - v1 2022-08-01 10:00pm', 'Sparks')
+        .replaceAll('--t1', '')
+        .replaceAll('--t2', '')
+        .replaceAll('--t3', '')
+        .replaceAll('_', ' ')
+        .replaceAll('-', ' ');
+
+    return clean
+        .split(' ')
+        .where((w) => w.trim().isNotEmpty)
+        .map((w) => w[0].toUpperCase() + w.substring(1))
+        .join(' ');
+  }
+
+  List<Map<String, String>> _processPredictions(List<RoboflowPrediction> rawPreds) {
+    return rawPreds.map((p) {
+      final rawCls = p.className;
+      final formattedName = _formatClassName(rawCls);
+
+      final pctRaw = p.confidencePercentage.replaceAll('%', '').replaceAll('(', '').replaceAll(')', '').trim();
+      final pctDisplay = pctRaw.isNotEmpty ? '$pctRaw%' : '${(p.confidence * 100).toStringAsFixed(1)}%';
+
+      return {
+        'name': formattedName,
+        'pct': pctDisplay,
+      };
+    }).toList();
+  }
+
   Widget _buildImageDetectionRow(XFile file, int index) {
     final isAnalyzing = analyzingImages.contains(file.path);
     final preds = detections[file.path] ?? [];
@@ -727,27 +860,80 @@ class _AiDetectionResultsCard extends StatelessWidget {
                   'No objects detected',
                   style: TextStyle(color: Tok.textLo, fontSize: 11),
                 )
-              else
-                Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: preds.map((p) => Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Tok.brandSoft.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(color: Tok.brandSoft.withValues(alpha: 0.3)),
-                    ),
-                    child: Text(
-                      '${p.className} (${p.confidencePercentage})',
-                      style: TextStyle(
-                        color: Tok.textHi,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  )).toList(),
-                ),
+              else ...[
+                Builder(builder: (context) {
+                  final processed = _processPredictions(preds);
+                  final compliant = processed.where((i) => !_isHazardClass(i['name']!)).toList();
+                  final hazard = processed.where((i) => _isHazardClass(i['name']!)).toList();
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (compliant.isNotEmpty) ...[
+                        Row(
+                          children: [
+                            Icon(Icons.check_circle_outline_rounded, size: 11, color: Tok.ok),
+                            const SizedBox(width: 4),
+                            Text('Compliant', style: TextStyle(color: Tok.ok, fontSize: 10, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: compliant.map((item) {
+                            final name = item['name']!;
+                            final pct = item['pct']!;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Tok.ok.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Tok.ok.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                '$name $pct',
+                                style: TextStyle(color: Tok.textHi, fontSize: 10, fontWeight: FontWeight.w500),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      if (hazard.isNotEmpty) ...[
+                        Row(
+                          children: [
+                            Icon(Icons.warning_amber_rounded, size: 11, color: Tok.danger),
+                            const SizedBox(width: 4),
+                            Text('Fire Hazard', style: TextStyle(color: Tok.danger, fontSize: 10, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: hazard.map((item) {
+                            final name = item['name']!;
+                            final pct = item['pct']!;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Tok.danger.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: Tok.danger.withValues(alpha: 0.3)),
+                              ),
+                              child: Text(
+                                '$name $pct',
+                                style: TextStyle(color: Tok.danger, fontSize: 10, fontWeight: FontWeight.w600),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
+                    ],
+                  );
+                }),
+              ],
             ],
           ),
         ),

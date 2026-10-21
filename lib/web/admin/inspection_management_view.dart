@@ -1761,43 +1761,7 @@ class _InspectionDetailsDialog extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                if (detections.isEmpty)
-                  Text(
-                    'No AI detections tagged for this photo.',
-                    style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
-                  )
-                else
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: _formatAndDeduplicateDetections(detections).map((item) {
-                      final name = item['name']!;
-                      final pct = item['pct']!;
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Tok.surfaceAlt,
-                          borderRadius: BorderRadius.circular(Tok.rSm),
-                          border: Border.all(color: Tok.border),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.verified_outlined, size: 12, color: Tok.info),
-                            const SizedBox(width: 5),
-                            Text(
-                              pct.isNotEmpty ? '$name $pct' : name,
-                              style: TextStyle(
-                                color: Tok.textHi,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                _buildDetectionsSplitView(detections),
               ],
             ),
           ),
@@ -1807,17 +1771,49 @@ class _InspectionDetailsDialog extends StatelessWidget {
   }
 }
 
-List<Map<String, String>> _formatAndDeduplicateDetections(List<dynamic> rawDetections) {
+bool _isHazardClass(String className) {
+  final lower = className.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
+  return lower.contains('cigarette') ||
+      lower.contains('firecracker') ||
+      lower.contains('flammable') ||
+      lower.contains('lighter') ||
+      lower.contains('loaded outlet') ||
+      lower.contains('overload') ||
+      lower.contains('exposed wiring') ||
+      lower.contains('exposed wired') ||
+      lower.contains('wiring') ||
+      lower.contains('wired') ||
+      lower.contains('damaged wire') ||
+      lower.contains('spark') ||
+      lower.contains('bidon') ||
+      lower.contains('hazard') ||
+      lower.contains('combustible') ||
+      lower.contains('danger');
+}
+
+String _formatClassName(String rawCls) {
+  String clean = rawCls
+      .replaceAll('sparks - v1 2022-08-01 10:00pm', 'Sparks')
+      .replaceAll('--t1', '')
+      .replaceAll('--t2', '')
+      .replaceAll('--t3', '')
+      .replaceAll('_', ' ')
+      .replaceAll('-', ' ');
+
+  return clean
+      .split(' ')
+      .where((w) => w.trim().isNotEmpty)
+      .map((w) => w[0].toUpperCase() + w.substring(1))
+      .join(' ');
+}
+
+List<Map<String, dynamic>> _formatAndDeduplicateDetections(List<dynamic> rawDetections) {
   final Map<String, String> uniqueMap = {};
 
   for (final d in rawDetections) {
     if (d is Map) {
       final rawCls = (d['class'] ?? 'Equipment').toString();
-      final formattedName = rawCls
-          .replaceAll('_', ' ')
-          .split(' ')
-          .map((w) => w.isEmpty ? '' : w[0].toUpperCase() + w.substring(1))
-          .join(' ');
+      final formattedName = _formatClassName(rawCls);
 
       final pctRaw = (d['confidence_pct'] ?? '')
           .toString()
@@ -1825,8 +1821,8 @@ List<Map<String, String>> _formatAndDeduplicateDetections(List<dynamic> rawDetec
           .replaceAll('(', '')
           .replaceAll(')', '')
           .trim();
-      final pctVal = double.tryParse(pctRaw) ?? 0.0;
-      final pctDisplay = pctRaw.isNotEmpty ? '$pctRaw%' : '';
+      final pctVal = double.tryParse(pctRaw) ?? (((d['confidence'] as num?)?.toDouble() ?? 0.0) * 100);
+      final pctDisplay = '${pctVal.toStringAsFixed(1)}%';
 
       if (!uniqueMap.containsKey(formattedName)) {
         uniqueMap[formattedName] = pctDisplay;
@@ -1840,7 +1836,161 @@ List<Map<String, String>> _formatAndDeduplicateDetections(List<dynamic> rawDetec
     }
   }
 
-  return uniqueMap.entries.map((e) => {'name': e.key, 'pct': e.value}).toList();
+  return uniqueMap.entries.map((e) {
+    final name = e.key;
+    final pct = e.value;
+    final isHazard = _isHazardClass(name);
+    return {
+      'name': name,
+      'pct': pct,
+      'isHazard': isHazard,
+    };
+  }).toList();
+}
+
+Widget _buildDetectionsSplitView(List<dynamic> rawDetections) {
+  if (rawDetections.isEmpty) {
+    return Text(
+      'No AI detections tagged for this photo.',
+      style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
+    );
+  }
+
+  final items = _formatAndDeduplicateDetections(rawDetections);
+  final compliantList = items.where((i) => !(i['isHazard'] as bool)).toList();
+  final hazardList = items.where((i) => (i['isHazard'] as bool)).toList();
+
+  return Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      // LEFT: COMPLIANT SAFETY EQUIPMENT
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Tok.ok.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(Tok.rSm),
+            border: Border.all(color: Tok.ok.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.check_circle_outline_rounded, size: 13, color: Tok.ok),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Compliant Equipment',
+                      style: TextStyle(
+                        color: Tok.ok,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              if (compliantList.isEmpty)
+                Text('None detected', style: TextStyle(color: Tok.textLo, fontSize: 11))
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: compliantList.map((item) {
+                    final name = item['name'] as String;
+                    final pct = item['pct'] as String;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Tok.ok.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(Tok.rSm),
+                        border: Border.all(color: Tok.ok.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        pct.isNotEmpty ? '$name $pct' : name,
+                        style: TextStyle(
+                          color: Tok.textHi,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(width: 8),
+
+      // RIGHT: FIRE HAZARDS DETECTED
+      Expanded(
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Tok.danger.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(Tok.rSm),
+            border: Border.all(color: Tok.danger.withValues(alpha: 0.2)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 13, color: Tok.danger),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      'Fire Hazards',
+                      style: TextStyle(
+                        color: Tok.danger,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              if (hazardList.isEmpty)
+                Text('No hazards detected', style: TextStyle(color: Tok.textLo, fontSize: 11))
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: hazardList.map((item) {
+                    final name = item['name'] as String;
+                    final pct = item['pct'] as String;
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Tok.danger.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(Tok.rSm),
+                        border: Border.all(color: Tok.danger.withValues(alpha: 0.3)),
+                      ),
+                      child: Text(
+                        pct.isNotEmpty ? '$name $pct' : name,
+                        style: TextStyle(
+                          color: Tok.danger,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ],
+  );
 }
 
 
@@ -2041,72 +2191,7 @@ void _showEvidenceLightbox(
                       ),
                     if (detections.isNotEmpty) ...[
                       const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Tok.bg,
-                          borderRadius: BorderRadius.circular(Tok.rMd),
-                          border: Border.all(color: Tok.border),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(
-                                  Icons.center_focus_strong_rounded,
-                                  size: 18,
-                                  color: Tok.info,
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Roboflow AI Identified Safety Equipment',
-                                  style: TextStyle(
-                                    color: Tok.textHi,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 6,
-                              runSpacing: 6,
-                              children: _formatAndDeduplicateDetections(detections).map((item) {
-                                final name = item['name']!;
-                                final pct = item['pct']!;
-                                return Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Tok.surfaceAlt,
-                                    borderRadius: BorderRadius.circular(Tok.rSm),
-                                    border: Border.all(color: Tok.border),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.verified_outlined, size: 13, color: Tok.info),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        pct.isNotEmpty ? '$name $pct' : name,
-                                        style: TextStyle(
-                                          color: Tok.textHi,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _buildDetectionsSplitView(detections),
                     ],
                   ],
                 ),
