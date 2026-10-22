@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import '../../../services/web_helper.dart';
 import '../clerk_theme.dart';
 
 class ClerkReportsTab extends StatefulWidget {
@@ -173,8 +175,7 @@ class _ClerkReportsTabState extends State<ClerkReportsTab> {
                 data: <List<String>>[
                   <String>['Barangay', 'Requests'],
                   ...stats.barangayDistribution.entries
-                      .map((e) => [e.key, e.value.toString()])
-                      .toList(),
+                      .map((e) => [e.key, e.value.toString()]),
                 ],
               ),
             ];
@@ -182,15 +183,24 @@ class _ClerkReportsTabState extends State<ClerkReportsTab> {
         ),
       );
 
-      await Printing.layoutPdf(
-        onLayout: (PdfPageFormat format) async => pdf.save(),
-        name:
-        'PyraCheck_Operations_Report_${DateTime.now().millisecondsSinceEpoch}.pdf',
-      );
+      final bytes = await pdf.save();
+      final base64Str = base64Encode(bytes);
+      final fileName = 'PyraCheck_Operations_Report_${DateTime.now().millisecondsSinceEpoch}';
+
+      downloadBase64File(base64Str, fileName, 'pdf');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Report "$fileName.pdf" downloaded successfully.'),
+            backgroundColor: Tok.ok,
+          ),
+        );
+      }
     } catch (e) {
-      debugPrint('PDF Error: $e');
+      debugPrint('PDF Download Error: $e');
     } finally {
-      setState(() => _isGenerating = false);
+      if (mounted) setState(() => _isGenerating = false);
     }
   }
 }
@@ -321,6 +331,7 @@ class _BarangayPerformanceTable extends StatelessWidget {
   Widget build(BuildContext context) {
     final sortedEntries = brgyStats.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
+    final totalCount = sortedEntries.fold<int>(0, (int total, e) => total + e.value);
 
     return TableShell(
       header: Container(
@@ -351,10 +362,9 @@ class _BarangayPerformanceTable extends StatelessWidget {
             Divider(height: 1, color: Tok.borderSoft),
         itemBuilder: (context, index) {
           final entry = sortedEntries[index];
-          final percent = (entry.value /
-              sortedEntries.fold(0, (sum, e) => sum + e.value) *
-              100)
-              .toStringAsFixed(1);
+          final percent = totalCount > 0
+              ? (entry.value / totalCount * 100).toStringAsFixed(1)
+              : '0.0';
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
