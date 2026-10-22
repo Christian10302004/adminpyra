@@ -3,7 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'dart:math' as math;
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:image/image.dart' as img_lib;
+import 'package:printing/printing.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart' as syncfusion;
 import '../../services/web_helper.dart';
 import '../../services/textbee_service.dart';
 import 'admin_theme.dart';
@@ -48,14 +53,14 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
 
   bool get isClerk =>
       _userRole == 'clerk/encoder' ||
-          _userRole == 'clerk' ||
-          _userRole == 'encoder';
+      _userRole == 'clerk' ||
+      _userRole == 'encoder';
 
   bool get isMarshal =>
       _userRole == 'fire marshal' ||
-          _userRole == 'firemarshal' ||
-          _userRole == 'firemarshall' ||
-          _userRole == 'admin';
+      _userRole == 'firemarshal' ||
+      _userRole == 'firemarshall' ||
+      _userRole == 'admin';
 
   @override
   Widget build(BuildContext context) {
@@ -64,10 +69,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
         child: SizedBox(
           width: 22,
           height: 22,
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Tok.textLo,
-          ),
+          child: CircularProgressIndicator(strokeWidth: 2, color: Tok.textLo),
         ),
       );
     }
@@ -99,8 +101,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                         color: Tok.textLo,
                       ),
                       border: InputBorder.none,
-                      contentPadding:
-                      const EdgeInsets.symmetric(vertical: 10),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
                     ),
                   ),
                 ),
@@ -123,11 +124,12 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
             const _SectionHeading(
               title: 'Inspection registry',
               subtitle:
-              'Upload the certificate draft for any completed inspection. The Fire Marshal reviews and releases it to the client.',
+                  'Upload the certificate draft for any completed inspection. The Fire Marshal reviews and releases it to the client.',
             ),
             const SizedBox(height: 12),
             _ClerkRegistry(
               onUpload: _uploadCertificate,
+              onEdit: _editCertificate,
               searchQuery: _searchController.text,
             ),
             const SizedBox(height: 32),
@@ -137,17 +139,14 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
             const _SectionHeading(
               title: 'Awaiting issuance',
               subtitle:
-              'Drafts uploaded by clerks. Review the file, verify requirements and inspection photos, then approve and send.',
+                  'Drafts uploaded by clerks. Review the file, verify requirements and inspection photos, then approve and send.',
             ),
             const SizedBox(height: 12),
             _MarshalQueue(
               onReview: _viewCertificate,
               onIssue: _issueCertificate,
               onViewUserFiles: _viewUserFiles,
-              onViewInspectionPhoto: (b64) => _viewCertificate({
-                'certificate_base64': b64,
-                'certificate_extension': 'jpg',
-              }),
+              onViewInspectionPhoto: _viewInspectionPhotos,
               searchQuery: _searchController.text,
             ),
             const SizedBox(height: 32),
@@ -156,7 +155,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
           const _SectionHeading(
             title: 'Recently issued',
             subtitle:
-            'Certificates the Fire Marshal has officially released. Click any record to open the full audit trail.',
+                'Certificates the Fire Marshal has officially released. Click any record to open the full audit trail.',
           ),
           const SizedBox(height: 12),
           _RecentlyIssued(
@@ -172,14 +171,16 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
   // ACTIONS (behavior unchanged)
   // ---------------------------------------------------------------------
   Future<void> _issueCertificate(String docId) async {
-    final docRef =
-    FirebaseFirestore.instance.collection('inspection_requests').doc(docId);
+    final docRef = FirebaseFirestore.instance
+        .collection('inspection_requests')
+        .doc(docId);
     final doc = await docRef.get();
     if (!doc.exists) return;
     final data = doc.data() as Map<String, dynamic>;
 
     DateTime selectedDate = DateTime.now().add(const Duration(days: 365));
 
+    if (!mounted) return;
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -223,7 +224,9 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                               const SizedBox(height: 2),
                               Text(
                                 '${selectedDate.year}-${selectedDate.month.toString().padLeft(2, '0')}-${selectedDate.day.toString().padLeft(2, '0')}',
-                                style: Tok.body.copyWith(fontWeight: FontWeight.w600),
+                                style: Tok.body.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ],
                           ),
@@ -234,7 +237,9 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                               context: dialogCtx,
                               initialDate: selectedDate,
                               firstDate: DateTime.now(),
-                              lastDate: DateTime.now().add(const Duration(days: 3650)),
+                              lastDate: DateTime.now().add(
+                                const Duration(days: 3650),
+                              ),
                             );
                             if (picked != null) {
                               setDialogState(() => selectedDate = picked);
@@ -251,7 +256,10 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                     children: [
                       TextButton(
                         onPressed: () => Navigator.pop(dialogCtx, false),
-                        child: Text('Cancel', style: TextStyle(color: Tok.textMid)),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(color: Tok.textMid),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       ElevatedButton.icon(
@@ -296,7 +304,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
       'uid': data['uid'],
       'title': 'Certificate Issued',
       'message':
-      'Your Fire Safety Clearance for ${data['property_name']} has been officially issued. Valid until $expDateStr.',
+          'Your Fire Safety Clearance for ${data['property_name']} has been officially issued. Valid until $expDateStr.',
       'timestamp': FieldValue.serverTimestamp(),
       'read': false,
     });
@@ -332,73 +340,109 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
     }
   }
 
-  Future<void> _uploadCertificate(String docId) async {
+  Future<void> _uploadCertificate(
+    String docId, [
+    Map<String, dynamic>? data,
+  ]) async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['pdf', 'jpg', 'jpeg', 'png'],
       withData: true,
     );
-
     if (result == null || result.files.isEmpty) return;
     final file = result.files.first;
     final bytes = file.bytes;
-    if (bytes == null) return;
-
-    try {
-      if (bytes.length > 750000) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('File too large. Maximum 750 KB.'),
-              backgroundColor: Tok.warn,
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
-        }
-        return;
-      }
-
-      final base64String = base64Encode(bytes);
-      final extension = file.extension ?? 'pdf';
-
-      await FirebaseFirestore.instance
-          .collection('inspection_requests')
-          .doc(docId)
-          .update({
-        'certificate_base64': base64String,
-        'certificate_extension': extension,
-        'certificate_filename': file.name,
-        'certificate_status': 'pending_review',
-        'certificate_issued_at': FieldValue.serverTimestamp(),
-      });
-
+    if (bytes == null) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content:
-            Text('Draft uploaded — sent to Fire Marshal for review.'),
-            backgroundColor: Tok.ok,
-            behavior: SnackBarBehavior.floating,
+            content: Text('Could not read the selected PDF file.'),
           ),
         );
       }
-    } catch (e) {
+      return;
+    }
+    try {
+      await _openCertificateEditor(
+        docId: docId,
+        requestData: data ?? const {},
+        fileBytes: bytes,
+        fileName: file.name,
+        fileExtension: file.extension ?? 'pdf',
+      );
+    } catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Upload failed: $e'),
+            content: Text('Could not open the selected certificate: $error'),
             backgroundColor: Tok.danger,
-            behavior: SnackBarBehavior.floating,
           ),
         );
       }
     }
   }
 
+  Future<void> _editCertificate(String docId, Map<String, dynamic> data) async {
+    final encodedFile = data['certificate_base64'] as String?;
+    try {
+      if (encodedFile == null || encodedFile.isEmpty) {
+        throw StateError('There is no certificate file to edit.');
+      }
+      final bytes = base64Decode(encodedFile);
+      final extension = (data['certificate_extension'] ?? 'pdf').toString();
+      await _openCertificateEditor(
+        docId: docId,
+        requestData: data,
+        fileBytes: bytes,
+        fileName: (data['certificate_filename'] ?? 'FSIC_$docId.$extension')
+            .toString(),
+        fileExtension: extension,
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not open the existing certificate: $error'),
+            backgroundColor: Tok.danger,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _openCertificateEditor({
+    required String docId,
+    required Map<String, dynamic> requestData,
+    required Uint8List fileBytes,
+    required String fileName,
+    required String fileExtension,
+  }) async {
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _CertificateEditorModal(
+        docId: docId,
+        requestData: requestData,
+        fileBytes: fileBytes,
+        fileName: fileName,
+        fileExtension: fileExtension,
+        onUploaded: () {
+          setState(() {});
+        },
+      ),
+    );
+  }
+
   void _viewCertificate(Map<String, dynamic> data) {
     final base64 = data['certificate_base64'] as String?;
     final ext = (data['certificate_extension'] ?? 'jpg').toString();
-    if (base64 == null) return;
+    if (base64 == null || base64.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No certificate file is available.')),
+      );
+      return;
+    }
 
     if (ext.toLowerCase() == 'pdf') {
       if (kIsWeb) {
@@ -418,24 +462,51 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
         );
       }
     } else {
-      _showMediaDialog(
-        title: 'Certificate preview',
-        subtitle: (data['certificate_filename'] ?? 'Image').toString(),
-        items: [
-          _MediaItem(
-            name: (data['certificate_filename'] ?? 'image').toString(),
-            base64: base64,
-          ),
-        ],
+      _showMediaPreview(
+        _MediaItem(
+          name: (data['certificate_filename'] ?? 'Image').toString(),
+          base64: base64,
+        ),
       );
     }
   }
 
-  void _viewUserFiles(BuildContext context, String docId, [Map<String, dynamic>? data]) {
-    final certType = (data?['inspection_type'] ?? 'Annual Fire Inspection').toString();
+  void _showMediaPreview(_MediaItem item) {
+    showDialog(
+      context: context,
+      builder: (context) => _SingleMediaDialog(item: item),
+    );
+  }
+
+  void _viewInspectionPhotos(
+    BuildContext context,
+    String docId, [
+    Map<String, dynamic>? data,
+  ]) {
+    _showMediaDialog(
+      title: 'Inspection photos',
+      subtitle: 'Photos submitted by the inspector',
+      stream: FirebaseFirestore.instance
+          .collection('inspection_requests')
+          .doc(docId)
+          .collection('evidence')
+          .snapshots(),
+      primaryBase64: data?['evidence_base64'] as String?,
+      emptyLabel: 'No inspection photos were uploaded for this request.',
+    );
+  }
+
+  void _viewUserFiles(
+    BuildContext context,
+    String docId, [
+    Map<String, dynamic>? data,
+  ]) {
+    final certType = (data?['inspection_type'] ?? 'Annual Fire Inspection')
+        .toString();
     _showMediaDialog(
       title: 'Client requirements',
-      subtitle: 'Files uploaded by property owner · Certificate Requested: $certType',
+      subtitle:
+          'Files uploaded by property owner · Certificate Requested: $certType',
       inspectionType: certType,
       stream: FirebaseFirestore.instance
           .collection('inspection_requests')
@@ -447,7 +518,10 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
   }
 
   void _showIssuedDetailDialog(
-      BuildContext context, String docId, Map<String, dynamic> data) {
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> data,
+  ) {
     showDialog(
       context: context,
       builder: (context) => Dialog(
@@ -505,8 +579,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                               const SizedBox(width: 10),
                               Text(
                                 '·',
-                                style:
-                                Tok.bodySm.copyWith(color: Tok.textLo),
+                                style: Tok.bodySm.copyWith(color: Tok.textLo),
                               ),
                               const SizedBox(width: 10),
                               Text(
@@ -515,7 +588,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                                   color: Tok.textLo,
                                   fontSize: 11,
                                   fontFeatures: const [
-                                    FontFeature.tabularFigures()
+                                    FontFeature.tabularFigures(),
                                   ],
                                 ),
                               ),
@@ -553,7 +626,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                           final client = _AuditColumn(
                             title: 'Client submissions',
                             meta:
-                            'Owner · ${data['full_name'] ?? data['email'] ?? '—'}',
+                                'Owner · ${data['full_name'] ?? data['email'] ?? '—'}',
                             docId: docId,
                             subcollection: 'files',
                             emptyLabel: 'No requirement files found.',
@@ -561,7 +634,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                           final inspector = _AuditColumn(
                             title: 'Inspection proof',
                             meta:
-                            'Inspector · ${data['inspector_name'] ?? '—'}',
+                                'Inspector · ${data['inspector_name'] ?? '—'}',
                             docId: docId,
                             subcollection: 'evidence',
                             emptyLabel: 'No evidence photos found.',
@@ -613,6 +686,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
     String? inspectionType,
     Stream<QuerySnapshot>? stream,
     List<_MediaItem>? items,
+    String? primaryBase64,
     String? emptyLabel,
   }) {
     showDialog(
@@ -668,51 +742,88 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                 child: items != null
                     ? _MediaGrid(items: items)
                     : StreamBuilder<QuerySnapshot>(
-                  stream: stream!,
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) {
-                      return Center(
-                        child: SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Tok.textLo,
-                          ),
-                        ),
-                      );
-                    }
-                    final docs = snapshot.data!.docs;
-                    final list = docs.map((d) {
-                      final map = d.data() as Map<String, dynamic>;
-                      return _MediaItem(
-                        name: (map['name'] ?? 'image').toString(),
-                        base64: map['base64'].toString(),
-                      );
-                    }).toList();
+                        stream: stream!,
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  'Could not load uploaded files: ${snapshot.error}',
+                                  style: Tok.bodySm.copyWith(color: Tok.danger),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            );
+                          }
+                          if (!snapshot.hasData) {
+                            return Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Tok.textLo,
+                                ),
+                              ),
+                            );
+                          }
+                          final docs = snapshot.data!.docs;
+                          final list = docs
+                              .map((d) {
+                                final map = d.data() as Map<String, dynamic>;
+                                final base64 = (map['base64'] ?? '').toString();
+                                return _MediaItem(
+                                  name: (map['name'] ?? '').toString(),
+                                  base64: base64,
+                                );
+                              })
+                              .where((item) => item.base64.isNotEmpty)
+                              .toList();
+                          if (primaryBase64 != null &&
+                              primaryBase64.trim().isNotEmpty &&
+                              !list.any(
+                                (item) => item.base64 == primaryBase64,
+                              )) {
+                            list.insert(
+                              0,
+                              _MediaItem(
+                                name: 'Inspection photo',
+                                base64: primaryBase64,
+                              ),
+                            );
+                          }
+                          for (var i = 0; i < list.length; i++) {
+                            if (list[i].name.isEmpty) {
+                              list[i] = _MediaItem(
+                                name: 'Inspection photo ${i + 1}',
+                                base64: list[i].base64,
+                              );
+                            }
+                          }
 
-                    return SingleChildScrollView(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (inspectionType != null)
-                            WebRequirementsChecklist(
-                              inspectionType: inspectionType,
-                              uploadedCount: list.length,
+                          return SingleChildScrollView(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (inspectionType != null)
+                                  WebRequirementsChecklist(
+                                    inspectionType: inspectionType,
+                                    uploadedCount: list.length,
+                                  ),
+                                if (list.isEmpty)
+                                  EmptyState(
+                                    icon: Icons.image_outlined,
+                                    label: emptyLabel ?? 'No files were found.',
+                                  )
+                                else
+                                  _MediaGrid(items: list, shrinkWrap: true),
+                              ],
                             ),
-                          if (docs.isEmpty)
-                            EmptyState(
-                              icon: Icons.image_outlined,
-                              label: emptyLabel ?? 'No files were found.',
-                            )
-                          else
-                            _MediaGrid(items: list),
-                        ],
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -820,8 +931,9 @@ class _RowActionButton extends StatelessWidget {
         elevation: 0,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         minimumSize: const Size(0, 30),
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(Tok.rMd)),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(Tok.rMd),
+        ),
         textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
       ),
     );
@@ -866,9 +978,15 @@ class _GhostIconButton extends StatelessWidget {
 }
 
 class _ClerkRegistry extends StatelessWidget {
-  final Future<void> Function(String docId) onUpload;
+  final Future<void> Function(String docId, [Map<String, dynamic>? data])
+  onUpload;
+  final Future<void> Function(String docId, Map<String, dynamic> data) onEdit;
   final String searchQuery;
-  const _ClerkRegistry({required this.onUpload, required this.searchQuery});
+  const _ClerkRegistry({
+    required this.onUpload,
+    required this.onEdit,
+    required this.searchQuery,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -899,8 +1017,9 @@ class _ClerkRegistry extends StatelessWidget {
           final q = searchQuery.toLowerCase();
           docs = docs.where((d) {
             final data = d.data() as Map<String, dynamic>;
-            final property =
-            (data['property_name'] ?? '').toString().toLowerCase();
+            final property = (data['property_name'] ?? '')
+                .toString()
+                .toLowerCase();
             final owner = (data['full_name'] ?? data['email'] ?? '')
                 .toString()
                 .toLowerCase();
@@ -915,24 +1034,23 @@ class _ClerkRegistry extends StatelessWidget {
             children: [
               Container(
                 color: Tok.surfaceAlt,
-                padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
                 child: Row(
                   children: [
                     Expanded(
                       flex: 4,
                       child: Text('PROPERTY / OWNER', style: Tok.label),
                     ),
-                    Expanded(
-                      flex: 2,
-                      child: Text('PURPOSE', style: Tok.label),
-                    ),
+                    Expanded(flex: 2, child: Text('PURPOSE', style: Tok.label)),
                     SizedBox(
                       width: 130,
                       child: Text('STATUS', style: Tok.label),
                     ),
                     SizedBox(
-                      width: 200,
+                      width: 250,
                       child: Text('CERTIFICATE', style: Tok.label),
                     ),
                   ],
@@ -941,25 +1059,26 @@ class _ClerkRegistry extends StatelessWidget {
               Divider(height: 1, color: Tok.borderSoft),
               docs.isEmpty
                   ? const EmptyState(
-                icon: Icons.folder_outlined,
-                label: 'No matching records',
-              )
+                      icon: Icons.folder_outlined,
+                      label: 'No matching records',
+                    )
                   : ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                itemCount: docs.length,
-                separatorBuilder: (_, __) =>
-                    Divider(height: 1, color: Tok.borderSoft),
-                itemBuilder: (context, index) {
-                  final doc = docs[index];
-                  final data = doc.data() as Map<String, dynamic>;
-                  return _RegistryRow(
-                    data: data,
-                    onUpload: () => onUpload(doc.id),
-                  );
-                },
-              ),
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: EdgeInsets.zero,
+                      itemCount: docs.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: Tok.borderSoft),
+                      itemBuilder: (context, index) {
+                        final doc = docs[index];
+                        final data = doc.data() as Map<String, dynamic>;
+                        return _RegistryRow(
+                          data: data,
+                          onUpload: () => onUpload(doc.id, data),
+                          onEdit: () => onEdit(doc.id, data),
+                        );
+                      },
+                    ),
             ],
           ),
         );
@@ -971,7 +1090,12 @@ class _ClerkRegistry extends StatelessWidget {
 class _RegistryRow extends StatefulWidget {
   final Map<String, dynamic> data;
   final VoidCallback onUpload;
-  const _RegistryRow({required this.data, required this.onUpload});
+  final VoidCallback onEdit;
+  const _RegistryRow({
+    required this.data,
+    required this.onUpload,
+    required this.onEdit,
+  });
 
   @override
   State<_RegistryRow> createState() => _RegistryRowState();
@@ -993,8 +1117,9 @@ class _RegistryRowState extends State<_RegistryRow> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        color:
-        _hover ? Tok.surfaceAlt.withValues(alpha: 0.55) : Colors.transparent,
+        color: _hover
+            ? Tok.surfaceAlt.withValues(alpha: 0.55)
+            : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
@@ -1012,8 +1137,7 @@ class _RegistryRowState extends State<_RegistryRow> {
                   const SizedBox(height: 1),
                   Text(
                     (data['full_name'] ?? data['email'] ?? '—').toString(),
-                    style:
-                    Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
+                    style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1037,18 +1161,29 @@ class _RegistryRowState extends State<_RegistryRow> {
               ),
             ),
             SizedBox(
-              width: 200,
+              width: 250,
               child: Row(
                 children: [
                   _CertIndicator(hasCert: hasCert, status: certStatus),
-                  const SizedBox(width: 12),
-                  _RowActionButton(
-                    label: hasCert ? 'Update' : 'Upload',
-                    icon: hasCert
-                        ? Icons.published_with_changes_outlined
-                        : Icons.upload_file_outlined,
-                    onPressed: widget.onUpload,
-                  ),
+                  const SizedBox(width: 8),
+                  if (hasCert) ...[
+                    _RowActionButton(
+                      label: 'Edit PDF',
+                      icon: Icons.edit_note_rounded,
+                      onPressed: widget.onEdit,
+                    ),
+                    const SizedBox(width: 6),
+                    _GhostIconButton(
+                      icon: Icons.upload_file_outlined,
+                      tooltip: 'Replace PDF',
+                      onPressed: widget.onUpload,
+                    ),
+                  ] else
+                    _RowActionButton(
+                      label: 'Upload PDF',
+                      icon: Icons.upload_file_outlined,
+                      onPressed: widget.onUpload,
+                    ),
                 ],
               ),
             ),
@@ -1096,8 +1231,18 @@ class _CertIndicator extends StatelessWidget {
 class _MarshalQueue extends StatelessWidget {
   final void Function(Map<String, dynamic> data) onReview;
   final Future<void> Function(String docId) onIssue;
-  final void Function(BuildContext context, String docId, [Map<String, dynamic>? data]) onViewUserFiles;
-  final void Function(String base64) onViewInspectionPhoto;
+  final void Function(
+    BuildContext context,
+    String docId, [
+    Map<String, dynamic>? data,
+  ])
+  onViewUserFiles;
+  final void Function(
+    BuildContext context,
+    String docId, [
+    Map<String, dynamic>? data,
+  ])
+  onViewInspectionPhoto;
   final String searchQuery;
 
   const _MarshalQueue({
@@ -1137,8 +1282,9 @@ class _MarshalQueue extends StatelessWidget {
           final q = searchQuery.toLowerCase();
           docs = docs.where((d) {
             final data = d.data() as Map<String, dynamic>;
-            final property =
-            (data['property_name'] ?? '').toString().toLowerCase();
+            final property = (data['property_name'] ?? '')
+                .toString()
+                .toLowerCase();
             final owner = (data['full_name'] ?? data['email'] ?? '')
                 .toString()
                 .toLowerCase();
@@ -1153,8 +1299,10 @@ class _MarshalQueue extends StatelessWidget {
             children: [
               Container(
                 color: Tok.surfaceAlt,
-                padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
                 child: Row(
                   children: [
                     const SizedBox(width: 46), // Thumbnail space
@@ -1177,34 +1325,30 @@ class _MarshalQueue extends StatelessWidget {
               Divider(height: 1, color: Tok.borderSoft),
               docs.isEmpty
                   ? const EmptyState(
-                icon: Icons.mark_email_unread_outlined,
-                label: 'Nothing awaiting review',
-              )
-                  : ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.zero,
-                itemCount: docs.length,
-                separatorBuilder: (_, __) =>
-                    Divider(height: 1, color: Tok.borderSoft),
-                itemBuilder: (context, index) {
-                  final doc = docs[index];
-                  final data = doc.data() as Map<String, dynamic>;
-                  return _QueueRow(
-                    data: data,
-                    onReview: () => onReview(data),
-                    onIssue: () => onIssue(doc.id),
-                    onViewUserFiles: () =>
-                        onViewUserFiles(context, doc.id, data),
-                    onViewInspectionPhoto:
-                    data['evidence_base64'] != null
-                        ? () => onViewInspectionPhoto(
-                      data['evidence_base64'] as String,
+                      icon: Icons.mark_email_unread_outlined,
+                      label: 'Nothing awaiting review',
                     )
-                        : null,
-                  );
-                },
-              ),
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      padding: EdgeInsets.zero,
+                      itemCount: docs.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: Tok.borderSoft),
+                      itemBuilder: (context, index) {
+                        final doc = docs[index];
+                        final data = doc.data() as Map<String, dynamic>;
+                        return _QueueRow(
+                          data: data,
+                          onReview: () => onReview(data),
+                          onIssue: () => onIssue(doc.id),
+                          onViewUserFiles: () =>
+                              onViewUserFiles(context, doc.id, data),
+                          onViewInspectionPhoto: () =>
+                              onViewInspectionPhoto(context, doc.id, data),
+                        );
+                      },
+                    ),
             ],
           ),
         );
@@ -1238,8 +1382,9 @@ class _QueueRowState extends State<_QueueRow> {
   @override
   Widget build(BuildContext context) {
     final data = widget.data;
-    final ext =
-    (data['certificate_extension'] ?? 'img').toString().toLowerCase();
+    final ext = (data['certificate_extension'] ?? 'img')
+        .toString()
+        .toLowerCase();
     final isPdf = ext == 'pdf';
     final fileName = (data['certificate_filename'] ?? 'Draft file').toString();
     final property = (data['property_name'] ?? 'Untitled').toString();
@@ -1252,8 +1397,9 @@ class _QueueRowState extends State<_QueueRow> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOut,
-        color:
-        _hover ? Tok.surfaceAlt.withValues(alpha: 0.55) : Colors.transparent,
+        color: _hover
+            ? Tok.surfaceAlt.withValues(alpha: 0.55)
+            : Colors.transparent,
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1266,22 +1412,22 @@ class _QueueRowState extends State<_QueueRow> {
                 borderRadius: BorderRadius.circular(Tok.rSm),
                 child: isPdf || data['certificate_base64'] == null
                     ? Container(
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: Tok.surfaceAlt,
-                    border: Border.all(color: Tok.border),
-                    borderRadius: BorderRadius.circular(Tok.rSm),
-                  ),
-                  child: Icon(
-                    Icons.picture_as_pdf_outlined,
-                    size: 18,
-                    color: Tok.textMid,
-                  ),
-                )
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Tok.surfaceAlt,
+                          border: Border.all(color: Tok.border),
+                          borderRadius: BorderRadius.circular(Tok.rSm),
+                        ),
+                        child: Icon(
+                          Icons.picture_as_pdf_outlined,
+                          size: 18,
+                          color: Tok.textMid,
+                        ),
+                      )
                     : Image.memory(
-                  base64Decode(data['certificate_base64'] as String),
-                  fit: BoxFit.cover,
-                ),
+                        base64Decode(data['certificate_base64'] as String),
+                        fit: BoxFit.cover,
+                      ),
               ),
             ),
             const SizedBox(width: 12),
@@ -1301,8 +1447,7 @@ class _QueueRowState extends State<_QueueRow> {
                   const SizedBox(height: 1),
                   Text(
                     owner,
-                    style:
-                    Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
+                    style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -1432,8 +1577,9 @@ class _RecentlyIssued extends StatelessWidget {
           final q = searchQuery.toLowerCase();
           docs = docs.where((d) {
             final data = d.data() as Map<String, dynamic>;
-            final property =
-            (data['property_name'] ?? '').toString().toLowerCase();
+            final property = (data['property_name'] ?? '')
+                .toString()
+                .toLowerCase();
             final owner = (data['full_name'] ?? data['email'] ?? '')
                 .toString()
                 .toLowerCase();
@@ -1518,9 +1664,7 @@ class _IssuedCardState extends State<_IssuedCard> {
           decoration: BoxDecoration(
             color: _hover ? Tok.surfaceAlt : Tok.surface,
             borderRadius: BorderRadius.circular(Tok.rLg),
-            border: Border.all(
-              color: _hover ? Tok.border : Tok.borderSoft,
-            ),
+            border: Border.all(color: _hover ? Tok.border : Tok.borderSoft),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1537,7 +1681,10 @@ class _IssuedCardState extends State<_IssuedCard> {
                     ),
                   ),
                   const SizedBox(width: 6),
-                  Text('Issued · $statusText', style: Tok.label.copyWith(color: statusColor)),
+                  Text(
+                    'Issued · $statusText',
+                    style: Tok.label.copyWith(color: statusColor),
+                  ),
                 ],
               ),
               const SizedBox(height: 6),
@@ -1564,7 +1711,9 @@ class _IssuedCardState extends State<_IssuedCard> {
                     style: Tok.bodySm.copyWith(
                       color: isExpired ? Tok.danger : Tok.textMid,
                       fontSize: 10,
-                      fontWeight: isExpired ? FontWeight.bold : FontWeight.normal,
+                      fontWeight: isExpired
+                          ? FontWeight.bold
+                          : FontWeight.normal,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -1719,10 +1868,7 @@ class _AuditColumn extends StatelessWidget {
       children: [
         Text(title, style: Tok.h2),
         const SizedBox(height: 2),
-        Text(
-          meta,
-          style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11),
-        ),
+        Text(meta, style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11)),
         const SizedBox(height: 12),
         FutureBuilder<QuerySnapshot>(
           future: FirebaseFirestore.instance
@@ -1807,7 +1953,11 @@ class _AuditColumn extends StatelessWidget {
               children: docs.map((doc) {
                 final data = doc.data() as Map<String, dynamic>;
                 final base64 = data['base64'] as String?;
-                final name = (data['name'] ?? data['file_name'] ?? 'Requirement Document').toString();
+                final name =
+                    (data['name'] ??
+                            data['file_name'] ??
+                            'Requirement Document')
+                        .toString();
                 final detections = (data['detections'] as List?) ?? const [];
                 if (base64 == null || base64.isEmpty) {
                   return const SizedBox.shrink();
@@ -1817,7 +1967,8 @@ class _AuditColumn extends StatelessWidget {
                 if (!isPdf) {
                   try {
                     final bytes = base64Decode(base64);
-                    isPdf = bytes.length > 4 &&
+                    isPdf =
+                        bytes.length > 4 &&
                         bytes[0] == 0x25 &&
                         bytes[1] == 0x50 &&
                         bytes[2] == 0x44 &&
@@ -1836,18 +1987,29 @@ class _AuditColumn extends StatelessWidget {
                           side: BorderSide(color: Tok.border),
                         ),
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 750, maxHeight: 680),
+                          constraints: const BoxConstraints(
+                            maxWidth: 750,
+                            maxHeight: 680,
+                          ),
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  16,
+                                  12,
+                                  16,
+                                ),
                                 child: Row(
                                   children: [
                                     Text(name, style: Tok.h2),
                                     const Spacer(),
                                     IconButton(
-                                      icon: const Icon(Icons.close_rounded, size: 18),
+                                      icon: const Icon(
+                                        Icons.close_rounded,
+                                        size: 18,
+                                      ),
                                       onPressed: () => Navigator.pop(dialogCtx),
                                     ),
                                   ],
@@ -1865,18 +2027,35 @@ class _AuditColumn extends StatelessWidget {
                                           padding: const EdgeInsets.all(28),
                                           decoration: BoxDecoration(
                                             color: Tok.bg,
-                                            borderRadius: BorderRadius.circular(Tok.rMd),
-                                            border: Border.all(color: Tok.border),
+                                            borderRadius: BorderRadius.circular(
+                                              Tok.rMd,
+                                            ),
+                                            border: Border.all(
+                                              color: Tok.border,
+                                            ),
                                           ),
                                           child: Column(
-                                            mainAxisAlignment: MainAxisAlignment.center,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
                                             children: [
-                                              Icon(Icons.picture_as_pdf_rounded,
-                                                  size: 64, color: Tok.danger),
+                                              Icon(
+                                                Icons.picture_as_pdf_rounded,
+                                                size: 64,
+                                                color: Tok.danger,
+                                              ),
                                               const SizedBox(height: 16),
-                                              Text(name, style: Tok.h2, textAlign: TextAlign.center),
+                                              Text(
+                                                name,
+                                                style: Tok.h2,
+                                                textAlign: TextAlign.center,
+                                              ),
                                               const SizedBox(height: 6),
-                                              Text('PDF Document', style: Tok.bodySm.copyWith(color: Tok.textLo)),
+                                              Text(
+                                                'PDF Document',
+                                                style: Tok.bodySm.copyWith(
+                                                  color: Tok.textLo,
+                                                ),
+                                              ),
                                               const SizedBox(height: 24),
                                               Wrap(
                                                 spacing: 12,
@@ -1884,28 +2063,69 @@ class _AuditColumn extends StatelessWidget {
                                                 alignment: WrapAlignment.center,
                                                 children: [
                                                   ElevatedButton.icon(
-                                                    onPressed: () => openBase64InNewTab(base64, 'pdf'),
-                                                    icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                                                    label: const Text('Open PDF in New Tab'),
+                                                    onPressed: () =>
+                                                        openBase64InNewTab(
+                                                          base64,
+                                                          'pdf',
+                                                        ),
+                                                    icon: const Icon(
+                                                      Icons.open_in_new_rounded,
+                                                      size: 18,
+                                                    ),
+                                                    label: const Text(
+                                                      'Open PDF in New Tab',
+                                                    ),
                                                     style: ElevatedButton.styleFrom(
-                                                      backgroundColor: Tok.brand,
-                                                      foregroundColor: Colors.white,
-                                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                                      backgroundColor:
+                                                          Tok.brand,
+                                                      foregroundColor:
+                                                          Colors.white,
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 20,
+                                                            vertical: 12,
+                                                          ),
                                                       shape: RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.circular(Tok.rSm),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              Tok.rSm,
+                                                            ),
                                                       ),
                                                     ),
                                                   ),
                                                   OutlinedButton.icon(
-                                                    onPressed: () => downloadBase64File(base64, name.replaceAll('.pdf', ''), 'pdf'),
-                                                    icon: const Icon(Icons.download_rounded, size: 18),
-                                                    label: const Text('Download PDF'),
+                                                    onPressed: () =>
+                                                        downloadBase64File(
+                                                          base64,
+                                                          name.replaceAll(
+                                                            '.pdf',
+                                                            '',
+                                                          ),
+                                                          'pdf',
+                                                        ),
+                                                    icon: const Icon(
+                                                      Icons.download_rounded,
+                                                      size: 18,
+                                                    ),
+                                                    label: const Text(
+                                                      'Download PDF',
+                                                    ),
                                                     style: OutlinedButton.styleFrom(
-                                                      foregroundColor: Tok.textHi,
-                                                      side: BorderSide(color: Tok.border),
-                                                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                                      foregroundColor:
+                                                          Tok.textHi,
+                                                      side: BorderSide(
+                                                        color: Tok.border,
+                                                      ),
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 20,
+                                                            vertical: 12,
+                                                          ),
                                                       shape: RoundedRectangleBorder(
-                                                        borderRadius: BorderRadius.circular(Tok.rSm),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              Tok.rSm,
+                                                            ),
                                                       ),
                                                     ),
                                                   ),
@@ -1916,9 +2136,13 @@ class _AuditColumn extends StatelessWidget {
                                         )
                                       else
                                         ClipRRect(
-                                          borderRadius: BorderRadius.circular(Tok.rMd),
+                                          borderRadius: BorderRadius.circular(
+                                            Tok.rMd,
+                                          ),
                                           child: ConstrainedBox(
-                                            constraints: const BoxConstraints(maxHeight: 420),
+                                            constraints: const BoxConstraints(
+                                              maxHeight: 420,
+                                            ),
                                             child: Image.memory(
                                               base64Decode(base64),
                                               fit: BoxFit.contain,
@@ -1932,22 +2156,32 @@ class _AuditColumn extends StatelessWidget {
                                           padding: const EdgeInsets.all(12),
                                           decoration: BoxDecoration(
                                             color: Tok.bg,
-                                            borderRadius: BorderRadius.circular(Tok.rMd),
-                                            border: Border.all(color: Tok.border),
+                                            borderRadius: BorderRadius.circular(
+                                              Tok.rMd,
+                                            ),
+                                            border: Border.all(
+                                              color: Tok.border,
+                                            ),
                                           ),
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Row(
                                                 children: [
-                                                  Icon(Icons.psychology_outlined, size: 16, color: Tok.info),
+                                                  Icon(
+                                                    Icons.psychology_outlined,
+                                                    size: 16,
+                                                    color: Tok.info,
+                                                  ),
                                                   const SizedBox(width: 6),
                                                   Text(
                                                     'Roboflow AI Identified Safety Equipment',
                                                     style: TextStyle(
                                                       color: Tok.textHi,
                                                       fontSize: 12,
-                                                      fontWeight: FontWeight.w600,
+                                                      fontWeight:
+                                                          FontWeight.w600,
                                                     ),
                                                   ),
                                                 ],
@@ -1957,26 +2191,56 @@ class _AuditColumn extends StatelessWidget {
                                                 spacing: 6,
                                                 runSpacing: 6,
                                                 children: detections.map((d) {
-                                                  final cls = (d['class'] ?? 'Equipment').toString();
-                                                  final pct = (d['confidence_pct'] ?? '').toString();
+                                                  final cls =
+                                                      (d['class'] ??
+                                                              'Equipment')
+                                                          .toString();
+                                                  final pct =
+                                                      (d['confidence_pct'] ??
+                                                              '')
+                                                          .toString();
                                                   return Container(
-                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical: 4,
+                                                        ),
                                                     decoration: BoxDecoration(
-                                                      color: Tok.info.withValues(alpha: 0.15),
-                                                      borderRadius: BorderRadius.circular(Tok.rSm),
-                                                      border: Border.all(color: Tok.info.withValues(alpha: 0.3)),
+                                                      color: Tok.info
+                                                          .withValues(
+                                                            alpha: 0.15,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            Tok.rSm,
+                                                          ),
+                                                      border: Border.all(
+                                                        color: Tok.info
+                                                            .withValues(
+                                                              alpha: 0.3,
+                                                            ),
+                                                      ),
                                                     ),
                                                     child: Row(
-                                                      mainAxisSize: MainAxisSize.min,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
                                                       children: [
-                                                        Icon(Icons.smart_toy_outlined, size: 12, color: Tok.info),
-                                                        const SizedBox(width: 4),
+                                                        Icon(
+                                                          Icons
+                                                              .smart_toy_outlined,
+                                                          size: 12,
+                                                          color: Tok.info,
+                                                        ),
+                                                        const SizedBox(
+                                                          width: 4,
+                                                        ),
                                                         Text(
                                                           '$cls ${pct.isNotEmpty ? "($pct)" : ""}',
                                                           style: TextStyle(
                                                             color: Tok.textHi,
                                                             fontSize: 11,
-                                                            fontWeight: FontWeight.w500,
+                                                            fontWeight:
+                                                                FontWeight.w500,
                                                           ),
                                                         ),
                                                       ],
@@ -2014,11 +2278,19 @@ class _AuditColumn extends StatelessWidget {
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.picture_as_pdf_rounded, size: 36, color: Tok.danger),
+                              Icon(
+                                Icons.picture_as_pdf_rounded,
+                                size: 36,
+                                color: Tok.danger,
+                              ),
                               const SizedBox(height: 6),
                               Text(
                                 name,
-                                style: TextStyle(fontSize: 10, color: Tok.textHi, fontWeight: FontWeight.w500),
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: Tok.textHi,
+                                  fontWeight: FontWeight.w500,
+                                ),
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
@@ -2034,30 +2306,40 @@ class _AuditColumn extends StatelessWidget {
                             width: 120,
                             height: 120,
                             fit: BoxFit.cover,
-                            errorBuilder: (context, error, stackTrace) => Container(
-                              width: 120,
-                              height: 120,
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: Tok.bg,
-                                borderRadius: BorderRadius.circular(Tok.rMd),
-                                border: Border.all(color: Tok.border),
-                              ),
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.picture_as_pdf_rounded, size: 36, color: Tok.danger),
-                                  const SizedBox(height: 6),
-                                  Text(
-                                    name,
-                                    style: TextStyle(fontSize: 10, color: Tok.textHi),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    textAlign: TextAlign.center,
+                            errorBuilder: (context, error, stackTrace) =>
+                                Container(
+                                  width: 120,
+                                  height: 120,
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Tok.bg,
+                                    borderRadius: BorderRadius.circular(
+                                      Tok.rMd,
+                                    ),
+                                    border: Border.all(color: Tok.border),
                                   ),
-                                ],
-                              ),
-                            ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.picture_as_pdf_rounded,
+                                        size: 36,
+                                        color: Tok.danger,
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        name,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Tok.textHi,
+                                        ),
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ],
+                                  ),
+                                ),
                           ),
                         ),
                       if (detections.isNotEmpty)
@@ -2065,7 +2347,10 @@ class _AuditColumn extends StatelessWidget {
                           bottom: 4,
                           left: 4,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 5,
+                              vertical: 2,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xB3000000),
                               borderRadius: BorderRadius.circular(4),
@@ -2073,7 +2358,11 @@ class _AuditColumn extends StatelessWidget {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.smart_toy_outlined, size: 11, color: Colors.white),
+                                const Icon(
+                                  Icons.smart_toy_outlined,
+                                  size: 11,
+                                  color: Colors.white,
+                                ),
                                 const SizedBox(width: 3),
                                 Text(
                                   '${detections.length}',
@@ -2143,13 +2432,17 @@ class _ValidationColumn extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  isExpired ? Icons.event_busy_rounded : Icons.verified_user_outlined,
+                  isExpired
+                      ? Icons.event_busy_rounded
+                      : Icons.verified_user_outlined,
                   size: 14,
                   color: isExpired ? Tok.danger : Tok.ok,
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  isExpired ? 'Expired on ${_fmtDate(expTs)}' : 'Valid until ${_fmtDate(expTs)}',
+                  isExpired
+                      ? 'Expired on ${_fmtDate(expTs)}'
+                      : 'Valid until ${_fmtDate(expTs)}',
                   style: TextStyle(
                     color: isExpired ? Tok.danger : Tok.ok,
                     fontSize: 12,
@@ -2200,7 +2493,8 @@ class _MediaItem {
 
 class _MediaGrid extends StatelessWidget {
   final List<_MediaItem> items;
-  const _MediaGrid({required this.items});
+  final bool shrinkWrap;
+  const _MediaGrid({required this.items, this.shrinkWrap = false});
 
   bool _isPdfData(String base64Str, [String? name]) {
     if (name != null && name.toLowerCase().endsWith('.pdf')) return true;
@@ -2219,6 +2513,8 @@ class _MediaGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
+      shrinkWrap: shrinkWrap,
+      physics: shrinkWrap ? const NeverScrollableScrollPhysics() : null,
       padding: const EdgeInsets.all(20),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 260,
@@ -2236,7 +2532,10 @@ class _MediaGrid extends StatelessWidget {
             if (isPdf) {
               openBase64InNewTab(item.base64, 'pdf');
             } else {
-              _showSingleMediaDialog(context, item);
+              showDialog(
+                context: context,
+                builder: (context) => _SingleMediaDialog(item: item),
+              );
             }
           },
           borderRadius: BorderRadius.circular(Tok.rMd),
@@ -2251,8 +2550,11 @@ class _MediaGrid extends StatelessWidget {
                 ? Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.picture_as_pdf_rounded,
-                          size: 48, color: Tok.danger),
+                      Icon(
+                        Icons.picture_as_pdf_rounded,
+                        size: 48,
+                        color: Tok.danger,
+                      ),
                       const SizedBox(height: 10),
                       Text(
                         item.name,
@@ -2284,12 +2586,16 @@ class _MediaGrid extends StatelessWidget {
                       errorBuilder: (_, __, ___) => Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.picture_as_pdf_rounded,
-                              size: 48, color: Tok.danger),
+                          Icon(
+                            Icons.picture_as_pdf_rounded,
+                            size: 48,
+                            color: Tok.danger,
+                          ),
                           const SizedBox(height: 8),
-                          Text(item.name,
-                              style:
-                                  TextStyle(fontSize: 12, color: Tok.textHi)),
+                          Text(
+                            item.name,
+                            style: TextStyle(fontSize: 12, color: Tok.textHi),
+                          ),
                         ],
                       ),
                     ),
@@ -2299,49 +2605,1115 @@ class _MediaGrid extends StatelessWidget {
       },
     );
   }
+}
 
-  void _showSingleMediaDialog(BuildContext context, _MediaItem item) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Tok.surface,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(Tok.rLg),
-          side: BorderSide(color: Tok.border),
-        ),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 750, maxHeight: 680),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
-                child: Row(
-                  children: [
-                    Text(item.name, style: Tok.h2),
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.close_rounded, size: 18),
-                      onPressed: () => Navigator.pop(ctx),
-                    ),
-                  ],
-                ),
+class _SingleMediaDialog extends StatelessWidget {
+  final _MediaItem item;
+
+  const _SingleMediaDialog({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Tok.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(Tok.rLg),
+        side: BorderSide(color: Tok.border),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 750, maxHeight: 680),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 12, 16),
+              child: Row(
+                children: [
+                  Text(item.name, style: Tok.h2),
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
               ),
-              Divider(height: 1, color: Tok.borderSoft),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(Tok.rMd),
-                    child: Image.memory(
-                      base64Decode(item.base64),
-                      fit: BoxFit.contain,
-                    ),
+            ),
+            Divider(height: 1, color: Tok.borderSoft),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(Tok.rMd),
+                  child: Image.memory(
+                    base64Decode(item.base64),
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
-            ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CertificateEditorModal extends StatefulWidget {
+  final String docId;
+  final Map<String, dynamic> requestData;
+  final Uint8List fileBytes;
+  final String fileName;
+  final String fileExtension;
+  final VoidCallback onUploaded;
+
+  const _CertificateEditorModal({
+    required this.docId,
+    required this.requestData,
+    required this.fileBytes,
+    required this.fileName,
+    required this.fileExtension,
+    required this.onUploaded,
+  });
+
+  @override
+  State<_CertificateEditorModal> createState() =>
+      _CertificateEditorModalState();
+}
+
+class _SignatureStamp {
+  final Uint8List rawBytes;
+  final Uint8List bytes;
+  Offset position;
+  double width;
+
+  _SignatureStamp({
+    required this.rawBytes,
+    required this.bytes,
+    required this.position,
+    this.width = 130,
+  });
+
+  double get height => width / 2;
+}
+
+class _CertificateEditorModalState extends State<_CertificateEditorModal> {
+  static const double _canvasWidth = 600;
+  static const double _canvasHeight = 800;
+  static const EdgeInsets _pdfPreviewPageMargin = EdgeInsets.fromLTRB(
+    20,
+    8,
+    20,
+    12,
+  );
+  static const int _maxSignatures = 3;
+  static const List<(String, Color)> _coverColors = [
+    ('White', Color(0xFFFFFFFF)),
+    ('Light gray', Color(0xFFE0E0E0)),
+    ('Gray', Color(0xFFBDBDBD)),
+    ('Dark gray', Color(0xFF757575)),
+    ('Black', Color(0xFF000000)),
+    ('Light yellow', Color(0xFFFFF9C4)),
+  ];
+
+  late final TextEditingController _certNoController;
+  final _textController = TextEditingController();
+  final _horizontalCanvasController = ScrollController();
+  final List<_SignatureStamp> _signatures = [];
+  bool _cleanSignatureBg = true;
+  bool _coverTextBackground = false;
+  Color _coverTextColor = const Color(0xFFFFFFFF);
+  Uint8List? _finalPdfBytes;
+  Object? _generationError;
+  bool _isProcessingPdf = false;
+  bool _isUploading = false;
+  int _renderVersion = 0;
+  Size _pageSize = const Size(595, 842);
+  Offset _textPosition = const Offset(70, 500);
+  double _textFontSize = 18;
+  double _textBoxWidth = 300;
+  double _coverTextPadding = 6;
+  double _canvasZoom = 1;
+
+  double get _pagePreviewWidth =>
+      _canvasWidth - _pdfPreviewPageMargin.horizontal;
+
+  double get _pagePreviewHeight =>
+      _pagePreviewWidth * _pageSize.height / _pageSize.width;
+
+  Offset _pagePositionToPdf(Offset position, double scale) => Offset(
+    (position.dx - _pdfPreviewPageMargin.left) * scale,
+    (position.dy - _pdfPreviewPageMargin.top) * scale,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    final shortId = widget.docId.length >= 6
+        ? widget.docId.substring(0, 6).toUpperCase()
+        : widget.docId.toUpperCase();
+    _certNoController = TextEditingController(
+      text: widget.requestData['certificate_no'] ?? 'FSIC-2025-$shortId',
+    );
+    _generateStampedPdf();
+  }
+
+  @override
+  void dispose() {
+    _certNoController.dispose();
+    _textController.dispose();
+    _horizontalCanvasController.dispose();
+    super.dispose();
+  }
+
+  Uint8List _removeWhiteBg(Uint8List rawBytes) {
+    final decoded = img_lib.decodeImage(rawBytes);
+    if (decoded == null) {
+      throw const FormatException('The selected signature image is invalid.');
+    }
+    for (var y = 0; y < decoded.height; y++) {
+      for (var x = 0; x < decoded.width; x++) {
+        final pixel = decoded.getPixel(x, y);
+        if (pixel.r > 200 && pixel.g > 200 && pixel.b > 200) {
+          decoded.setPixelRgba(x, y, 0, 0, 0, 0);
+        }
+      }
+    }
+    return Uint8List.fromList(img_lib.encodePng(decoded));
+  }
+
+  Size _measureTextContent(String text) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(fontSize: _textFontSize),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: _textBoxWidth);
+    final lineWidths = painter.computeLineMetrics().map((line) => line.width);
+    final width = lineWidths.fold<double>(
+      0,
+      (widest, lineWidth) => lineWidth > widest ? lineWidth : widest,
+    );
+    return Size(width, painter.height);
+  }
+
+  Future<void> _pickSignatures() async {
+    final remaining = _maxSignatures - _signatures.length;
+    if (remaining <= 0) return;
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['png', 'jpg', 'jpeg'],
+      allowMultiple: remaining > 1,
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    if (!mounted) return;
+
+    final stamps = <_SignatureStamp>[];
+    try {
+      for (final file in result.files.take(remaining)) {
+        final bytes = file.bytes;
+        if (bytes == null) {
+          throw StateError('Could not read signature image "${file.name}".');
+        }
+        final signatureBytes = _cleanSignatureBg
+            ? _removeWhiteBg(bytes)
+            : bytes;
+        final index = _signatures.length + stamps.length;
+        stamps.add(
+          _SignatureStamp(
+            rawBytes: bytes,
+            bytes: signatureBytes,
+            position: Offset(350, 600 - index * 70),
           ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not import signature image: $error'),
+            backgroundColor: Tok.danger,
+          ),
+        );
+      }
+      return;
+    }
+    _signatures.addAll(stamps);
+    setState(() {});
+    await _generateStampedPdf();
+  }
+
+  Future<void> _generateStampedPdf() async {
+    final version = ++_renderVersion;
+    setState(() {
+      _isProcessingPdf = true;
+      _generationError = null;
+    });
+
+    syncfusion.PdfDocument? document;
+    try {
+      final extension = widget.fileExtension.toLowerCase();
+      final isImage = ['jpg', 'jpeg', 'png'].contains(extension);
+      if (isImage) {
+        document = syncfusion.PdfDocument();
+        final page = document.pages.add();
+        page.graphics.drawImage(
+          syncfusion.PdfBitmap(widget.fileBytes),
+          Rect.fromLTWH(0, 0, page.size.width, page.size.height),
+        );
+      } else {
+        document = syncfusion.PdfDocument(inputBytes: widget.fileBytes);
+      }
+
+      if (document.pages.count == 0) {
+        throw const FormatException('The selected document has no pages.');
+      }
+
+      final page = document.pages[0];
+      final scale = page.size.width / _pagePreviewWidth;
+      final padding = _coverTextBackground ? _coverTextPadding * scale : 0.0;
+
+      final text = _textController.text.trim();
+      if (text.isNotEmpty) {
+        final textFont = syncfusion.PdfStandardFont(
+          syncfusion.PdfFontFamily.helvetica,
+          _textFontSize * scale,
+        );
+        final textSize = textFont.measureString(
+          text,
+          layoutArea: Size(_textBoxWidth * scale, page.size.height),
+        );
+        final textPosition = _pagePositionToPdf(_textPosition, scale);
+        final textBounds = Rect.fromLTWH(
+          textPosition.dx + padding,
+          textPosition.dy + padding,
+          _textBoxWidth * scale,
+          textSize.height,
+        );
+        if (_coverTextBackground) {
+          page.graphics.drawRectangle(
+            brush: syncfusion.PdfSolidBrush(
+              syncfusion.PdfColor(
+                (_coverTextColor.r * 255).round().clamp(0, 255),
+                (_coverTextColor.g * 255).round().clamp(0, 255),
+                (_coverTextColor.b * 255).round().clamp(0, 255),
+              ),
+            ),
+            bounds: Rect.fromLTWH(
+              textPosition.dx,
+              textPosition.dy,
+              textSize.width + padding * 2,
+              textBounds.height + padding * 2,
+            ),
+          );
+        }
+        page.graphics.drawString(
+          text,
+          textFont,
+          bounds: textBounds,
+          brush: syncfusion.PdfBrushes.black,
+          format: syncfusion.PdfStringFormat(
+            lineAlignment: syncfusion.PdfVerticalAlignment.top,
+          ),
+        );
+      }
+
+      for (final signature in _signatures) {
+        final signaturePosition = _pagePositionToPdf(signature.position, scale);
+        page.graphics.drawImage(
+          syncfusion.PdfBitmap(signature.bytes),
+          Rect.fromLTWH(
+            signaturePosition.dx,
+            signaturePosition.dy,
+            signature.width * scale,
+            signature.height * scale,
+          ),
+        );
+      }
+
+      final bytes = Uint8List.fromList(await document.save());
+      if (mounted && version == _renderVersion) {
+        setState(() {
+          _pageSize = Size(page.size.width, page.size.height);
+          _finalPdfBytes = bytes;
+        });
+      }
+    } catch (error) {
+      debugPrint('Certificate PDF editing failed: $error');
+      if (mounted && version == _renderVersion) {
+        setState(() => _generationError = error);
+      }
+    } finally {
+      document?.dispose();
+      if (mounted && version == _renderVersion) {
+        setState(() => _isProcessingPdf = false);
+      }
+    }
+  }
+
+  Future<void> _saveDraft() async {
+    final bytes = _finalPdfBytes;
+    if (bytes == null || _isProcessingPdf || _generationError != null) return;
+    setState(() => _isUploading = true);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('inspection_requests')
+          .doc(widget.docId)
+          .update({
+            'certificate_base64': base64Encode(bytes),
+            'certificate_extension': 'pdf',
+            'certificate_filename': 'FSIC_${widget.docId}.pdf',
+            'certificate_no': _certNoController.text.trim(),
+            'certificate_status': 'pending_review',
+            'issued_at': FieldValue.delete(),
+            'expiration_date': FieldValue.delete(),
+            'updated_at': FieldValue.serverTimestamp(),
+          });
+
+      if (mounted) {
+        Navigator.pop(context);
+        widget.onUploaded();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('PDF saved and sent to the Fire Marshal for review.'),
+            backgroundColor: Tok.ok,
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not save the certificate: $error'),
+            backgroundColor: Tok.danger,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  Widget _signatureControl(int index) {
+    final signature = _signatures[index];
+    return Chip(
+      avatar: Image.memory(signature.bytes, width: 28, height: 22),
+      label: Text('Signature ${index + 1}'),
+      deleteIcon: const Icon(Icons.close, size: 16),
+      onDeleted: () {
+        setState(() => _signatures.removeAt(index));
+        _generateStampedPdf();
+      },
+    );
+  }
+
+  Widget _resizeHandle({
+    required ValueChanged<Offset> onResize,
+    required VoidCallback onResizeEnd,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onPanUpdate: (details) => onResize(details.delta),
+      onPanEnd: (_) => onResizeEnd(),
+      child: Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: Tok.brand,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: Colors.white, width: 1),
+        ),
+        child: const Icon(
+          Icons.open_in_full_rounded,
+          size: 13,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.of(context).size;
+    final textContentSize = _measureTextContent(_textController.text.trim());
+    final canSave =
+        !_isUploading &&
+        !_isProcessingPdf &&
+        _generationError == null &&
+        _finalPdfBytes != null;
+    final isImage = [
+      'jpg',
+      'jpeg',
+      'png',
+    ].contains(widget.fileExtension.toLowerCase());
+
+    return Dialog(
+      backgroundColor: Tok.surface,
+      insetPadding: EdgeInsets.zero,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.zero),
+      child: SizedBox(
+        width: screenSize.width,
+        height: screenSize.height,
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              color: Tok.surfaceAlt,
+              child: Column(
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Edit Certificate PDF',
+                              style: Tok.h2.copyWith(fontSize: 16),
+                            ),
+                            Text(
+                              '${widget.fileName} · Text and signatures are placed on page 1; up to 3 signatures.',
+                              style: Tok.bodySm.copyWith(
+                                color: Tok.textLo,
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: 150,
+                        child: TextField(
+                          controller: _certNoController,
+                          style: Tok.bodySm.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                          decoration: const InputDecoration(
+                            labelText: 'Certificate no.',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 190,
+                        child: TextField(
+                          controller: _textController,
+                          onChanged: (_) => _generateStampedPdf(),
+                          style: Tok.bodySm,
+                          decoration: const InputDecoration(
+                            labelText: 'Text to place on PDF',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                            contentPadding: EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: _signatures.length == _maxSignatures
+                            ? null
+                            : _pickSignatures,
+                        icon: const Icon(Icons.draw_rounded, size: 16),
+                        label: Text(
+                          'Add signature (${_signatures.length}/$_maxSignatures)',
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: _finalPdfBytes == null || _isProcessingPdf
+                            ? null
+                            : () => openBase64InNewTab(
+                                base64Encode(_finalPdfBytes!),
+                                'pdf',
+                              ),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: const Text('Preview'),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton.icon(
+                        onPressed: canSave ? _saveDraft : null,
+                        icon: _isUploading
+                            ? const SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined, size: 16),
+                        label: const Text('Save for Review'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Tok.ok,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Close',
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 22,
+                          color: Tok.textHi,
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: _cleanSignatureBg,
+                        onChanged: _signatures.isEmpty
+                            ? null
+                            : (value) {
+                                final shouldClean = value ?? true;
+                                setState(() {
+                                  _cleanSignatureBg = shouldClean;
+                                  for (var i = 0; i < _signatures.length; i++) {
+                                    final rawBytes = _signatures[i].rawBytes;
+                                    _signatures[i] = _SignatureStamp(
+                                      rawBytes: rawBytes,
+                                      bytes: shouldClean
+                                          ? _removeWhiteBg(rawBytes)
+                                          : rawBytes,
+                                      position: _signatures[i].position,
+                                      width: _signatures[i].width,
+                                    );
+                                  }
+                                });
+                                _generateStampedPdf();
+                              },
+                      ),
+                      Text(
+                        'Remove white signature backgrounds',
+                        style: Tok.bodySm,
+                      ),
+                      const SizedBox(width: 12),
+                      Checkbox(
+                        value: _coverTextBackground,
+                        onChanged: (value) {
+                          setState(() => _coverTextBackground = value ?? false);
+                          _generateStampedPdf();
+                        },
+                      ),
+                      Text('Cover text beneath text box', style: Tok.bodySm),
+                      if (_coverTextBackground) ...[
+                        const SizedBox(width: 8),
+                        DropdownButton<Color>(
+                          value: _coverTextColor,
+                          isDense: true,
+                          underline: const SizedBox.shrink(),
+                          onChanged: (color) {
+                            if (color == null) return;
+                            setState(() => _coverTextColor = color);
+                            _generateStampedPdf();
+                          },
+                          items: [
+                            for (final (label, color) in _coverColors)
+                              DropdownMenuItem(
+                                value: color,
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      width: 14,
+                                      height: 14,
+                                      decoration: BoxDecoration(
+                                        color: color,
+                                        border: Border.all(color: Tok.border),
+                                        borderRadius: BorderRadius.circular(3),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(label, style: Tok.bodySm),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Padding ${_coverTextPadding.round()}',
+                          style: Tok.bodySm,
+                        ),
+                        SizedBox(
+                          width: 130,
+                          child: Slider(
+                            value: _coverTextPadding,
+                            min: 0,
+                            max: 40,
+                            divisions: 20,
+                            label: '${_coverTextPadding.round()} px',
+                            onChanged: (value) {
+                              setState(() => _coverTextPadding = value);
+                            },
+                            onChangeEnd: (_) => _generateStampedPdf(),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(width: 12),
+                      ...List.generate(_signatures.length, _signatureControl),
+                      const SizedBox(width: 12),
+                      const Icon(Icons.zoom_out, size: 16),
+                      SizedBox(
+                        width: 130,
+                        child: Slider(
+                          value: _canvasZoom,
+                          min: 1,
+                          max: 2.5,
+                          divisions: 6,
+                          label: '${(_canvasZoom * 100).round()}%',
+                          onChanged: (value) {
+                            setState(() => _canvasZoom = value);
+                          },
+                        ),
+                      ),
+                      Text(
+                        '${(_canvasZoom * 100).round()}%',
+                        style: Tok.bodySm,
+                      ),
+                      const Spacer(),
+                      if (_generationError != null)
+                        Expanded(
+                          child: Text(
+                            'PDF edit failed: $_generationError',
+                            style: Tok.bodySm.copyWith(color: Tok.danger),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        )
+                      else if (_isProcessingPdf)
+                        Text(
+                          'Updating PDF…',
+                          style: Tok.bodySm.copyWith(color: Tok.textLo),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Divider(height: 1, color: Tok.border),
+            Expanded(
+              child: Container(
+                color: Tok.bg,
+                width: double.infinity,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final pageWidth = _canvasWidth * _canvasZoom;
+                    final pageHeight = _canvasHeight * _canvasZoom;
+                    final viewportHeight = (constraints.maxHeight - 48).clamp(
+                      0.0,
+                      double.infinity,
+                    );
+                    final contentWidth = constraints.maxWidth > pageWidth
+                        ? constraints.maxWidth
+                        : pageWidth;
+                    final contentHeight = viewportHeight > pageHeight
+                        ? viewportHeight
+                        : pageHeight;
+
+                    return Scrollbar(
+                      controller: _horizontalCanvasController,
+                      thumbVisibility: true,
+                      trackVisibility: true,
+                      interactive: true,
+                      thickness: 8,
+                      child: SingleChildScrollView(
+                        controller: _horizontalCanvasController,
+                        scrollDirection: Axis.horizontal,
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.symmetric(vertical: 24),
+                          child: SizedBox(
+                            width: contentWidth,
+                            height: contentHeight,
+                            child: Center(
+                              child: SizedBox(
+                                width: pageWidth,
+                                height: pageHeight,
+                                child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: Transform.scale(
+                                    scale: _canvasZoom,
+                                    alignment: Alignment.topLeft,
+                                    child: Container(
+                                      width: _canvasWidth,
+                                      height: _canvasHeight,
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(
+                                          Tok.rSm,
+                                        ),
+                                        boxShadow: const [
+                                          BoxShadow(
+                                            color: Colors.black38,
+                                            blurRadius: 16,
+                                            offset: Offset(0, 6),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Stack(
+                                        clipBehavior: Clip.hardEdge,
+                                        children: [
+                                          Positioned.fill(
+                                            child: isImage
+                                                ? Positioned(
+                                                    left: _pdfPreviewPageMargin
+                                                        .left,
+                                                    top: _pdfPreviewPageMargin
+                                                        .top,
+                                                    width: _pagePreviewWidth,
+                                                    height: _pagePreviewHeight,
+                                                    child: Image.memory(
+                                                      widget.fileBytes,
+                                                      fit: BoxFit.fill,
+                                                    ),
+                                                  )
+                                                : PdfPreview(
+                                                    build: (format) async =>
+                                                        widget.fileBytes,
+                                                    useActions: false,
+                                                    maxPageWidth: _canvasWidth,
+                                                    previewPageMargin:
+                                                        _pdfPreviewPageMargin,
+                                                    padding: EdgeInsets.zero,
+                                                    scrollViewDecoration:
+                                                        const BoxDecoration(
+                                                          color: Colors
+                                                              .transparent,
+                                                        ),
+                                                  ),
+                                          ),
+                                          if (_textController.text
+                                              .trim()
+                                              .isNotEmpty)
+                                            Positioned(
+                                              left: _textPosition.dx,
+                                              top: _textPosition.dy,
+                                              child: GestureDetector(
+                                                onPanUpdate: (details) {
+                                                  setState(() {
+                                                    _textPosition = Offset(
+                                                      (_textPosition.dx +
+                                                              details.delta.dx /
+                                                                  _canvasZoom)
+                                                          .clamp(
+                                                            _pdfPreviewPageMargin
+                                                                .left,
+                                                            math.max(
+                                                              _pdfPreviewPageMargin
+                                                                  .left,
+                                                              _pdfPreviewPageMargin
+                                                                      .left +
+                                                                  _pagePreviewWidth -
+                                                                  _textBoxWidth -
+                                                                  2 *
+                                                                      _coverTextPadding,
+                                                            ),
+                                                          ),
+                                                      (_textPosition.dy +
+                                                              details.delta.dy /
+                                                                  _canvasZoom)
+                                                          .clamp(
+                                                            _pdfPreviewPageMargin
+                                                                .top,
+                                                            math.max(
+                                                              _pdfPreviewPageMargin
+                                                                  .top,
+                                                              math.min(
+                                                                    _canvasHeight,
+                                                                    _pdfPreviewPageMargin
+                                                                            .top +
+                                                                        _pagePreviewHeight,
+                                                                  ) -
+                                                                  _textFontSize *
+                                                                      2.5 -
+                                                                  2 *
+                                                                      _coverTextPadding,
+                                                            ),
+                                                          ),
+                                                    );
+                                                  });
+                                                },
+                                                onPanEnd: (_) =>
+                                                    _generateStampedPdf(),
+                                                child: Stack(
+                                                  children: [
+                                                    Container(
+                                                      width:
+                                                          _textBoxWidth +
+                                                          (_coverTextBackground
+                                                              ? 2 *
+                                                                    _coverTextPadding
+                                                              : 0),
+                                                      padding: EdgeInsets.all(
+                                                        _coverTextBackground
+                                                            ? _coverTextPadding
+                                                            : 0,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        border: Border.all(
+                                                          color: Tok.brand,
+                                                        ),
+                                                      ),
+                                                      child: Stack(
+                                                        children: [
+                                                          if (_coverTextBackground)
+                                                            Positioned(
+                                                              left: 0,
+                                                              top: 0,
+                                                              child: Container(
+                                                                width:
+                                                                    textContentSize
+                                                                        .width +
+                                                                    2 *
+                                                                        _coverTextPadding,
+                                                                height:
+                                                                    textContentSize
+                                                                        .height +
+                                                                    2 *
+                                                                        _coverTextPadding,
+                                                                color:
+                                                                    _coverTextColor,
+                                                              ),
+                                                            ),
+                                                          Text(
+                                                            _textController
+                                                                .text,
+                                                            style: TextStyle(
+                                                              color:
+                                                                  Colors.black,
+                                                              fontSize:
+                                                                  _textFontSize,
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    Positioned(
+                                                      right: 0,
+                                                      bottom: 0,
+                                                      child: _resizeHandle(
+                                                        onResize: (delta) {
+                                                          setState(() {
+                                                            final scaledDelta =
+                                                                delta /
+                                                                _canvasZoom;
+                                                            final textLeft =
+                                                                _pdfPreviewPageMargin
+                                                                    .left;
+                                                            final textTop =
+                                                                _pdfPreviewPageMargin
+                                                                    .top;
+                                                            final pageBottom =
+                                                                math.min(
+                                                                  _canvasHeight,
+                                                                  textTop +
+                                                                      _pagePreviewHeight,
+                                                                );
+                                                            _textBoxWidth =
+                                                                (_textBoxWidth +
+                                                                        scaledDelta
+                                                                            .dx)
+                                                                    .clamp(
+                                                                      80.0,
+                                                                      _pagePreviewWidth,
+                                                                    );
+                                                            _textFontSize =
+                                                                (_textFontSize +
+                                                                        scaledDelta.dy *
+                                                                            0.15)
+                                                                    .clamp(
+                                                                      8.0,
+                                                                      72.0,
+                                                                    );
+                                                            _textPosition = Offset(
+                                                              _textPosition.dx.clamp(
+                                                                textLeft,
+                                                                math.max(
+                                                                  textLeft,
+                                                                  textLeft +
+                                                                      _pagePreviewWidth -
+                                                                      _textBoxWidth -
+                                                                      2 *
+                                                                          _coverTextPadding,
+                                                                ),
+                                                              ),
+                                                              _textPosition.dy.clamp(
+                                                                textTop,
+                                                                math.max(
+                                                                  textTop,
+                                                                  pageBottom -
+                                                                      _textFontSize *
+                                                                          2.5 -
+                                                                      2 *
+                                                                          _coverTextPadding,
+                                                                ),
+                                                              ),
+                                                            );
+                                                          });
+                                                        },
+                                                        onResizeEnd:
+                                                            _generateStampedPdf,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          for (final signature in _signatures)
+                                            Positioned(
+                                              left: signature.position.dx,
+                                              top: signature.position.dy,
+                                              child: GestureDetector(
+                                                onPanUpdate: (details) {
+                                                  setState(() {
+                                                    signature.position = Offset(
+                                                      (signature.position.dx +
+                                                              details.delta.dx /
+                                                                  _canvasZoom)
+                                                          .clamp(
+                                                            _pdfPreviewPageMargin
+                                                                .left,
+                                                            _pdfPreviewPageMargin
+                                                                    .left +
+                                                                _pagePreviewWidth -
+                                                                signature.width,
+                                                          ),
+                                                      (signature.position.dy +
+                                                              details.delta.dy /
+                                                                  _canvasZoom)
+                                                          .clamp(
+                                                            _pdfPreviewPageMargin
+                                                                .top,
+                                                            math.min(
+                                                                  _canvasHeight,
+                                                                  _pdfPreviewPageMargin
+                                                                          .top +
+                                                                      _pagePreviewHeight,
+                                                                ) -
+                                                                signature
+                                                                    .height,
+                                                          ),
+                                                    );
+                                                  });
+                                                },
+                                                onPanEnd: (_) =>
+                                                    _generateStampedPdf(),
+                                                child: Stack(
+                                                  children: [
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.all(
+                                                            4,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        border: Border.all(
+                                                          color: Tok.brand,
+                                                          width: 1.5,
+                                                        ),
+                                                        color: Colors.white
+                                                            .withValues(
+                                                              alpha: 0.25,
+                                                            ),
+                                                      ),
+                                                      child: Image.memory(
+                                                        signature.bytes,
+                                                        width: signature.width,
+                                                        height:
+                                                            signature.height,
+                                                        fit: BoxFit.contain,
+                                                      ),
+                                                    ),
+                                                    Positioned(
+                                                      right: 0,
+                                                      bottom: 0,
+                                                      child: _resizeHandle(
+                                                        onResize: (delta) {
+                                                          setState(() {
+                                                            final scaledDelta =
+                                                                delta /
+                                                                _canvasZoom;
+                                                            final change =
+                                                                (scaledDelta
+                                                                        .dx +
+                                                                    scaledDelta
+                                                                        .dy) /
+                                                                2;
+                                                            signature.width =
+                                                                (signature.width +
+                                                                        change)
+                                                                    .clamp(
+                                                                      50.0,
+                                                                      _canvasWidth -
+                                                                          signature
+                                                                              .position
+                                                                              .dx,
+                                                                    );
+                                                            signature
+                                                                .position = Offset(
+                                                              signature
+                                                                  .position
+                                                                  .dx
+                                                                  .clamp(
+                                                                    0.0,
+                                                                    _canvasWidth -
+                                                                        signature
+                                                                            .width,
+                                                                  ),
+                                                              signature
+                                                                  .position
+                                                                  .dy
+                                                                  .clamp(
+                                                                    0.0,
+                                                                    _canvasHeight -
+                                                                        signature
+                                                                            .height,
+                                                                  ),
+                                                            );
+                                                          });
+                                                        },
+                                                        onResizeEnd:
+                                                            _generateStampedPdf,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

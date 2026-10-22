@@ -21,7 +21,7 @@ class MarshalCommandTab extends StatelessWidget {
 
         final statusMap = <String, int>{
           'Pending': 0,
-          'In Review': 0,
+          'Awaiting Issuance': 0,
           'Issued': 0,
         };
 
@@ -33,7 +33,8 @@ class MarshalCommandTab extends StatelessWidget {
 
             if (certStatus == 'pending_review') {
               awaiting++;
-              statusMap['In Review'] = statusMap['In Review']! + 1;
+              statusMap['Awaiting Issuance'] =
+                  statusMap['Awaiting Issuance']! + 1;
             } else if (certStatus == 'issued') {
               statusMap['Issued'] = statusMap['Issued']! + 1;
               final issuedAt = data['issued_at'] as Timestamp?;
@@ -59,10 +60,10 @@ class MarshalCommandTab extends StatelessWidget {
                     child: Column(
                       children: [
                         _MetricCard(
-                          title: 'Needs Official Signature',
+                          title: 'Certificates Waiting for Issuance',
                           value: '$awaiting',
                           subtitle:
-                          'Certificates awaiting your final verification and release.',
+                              'Certificates awaiting your final review and official issuance.',
                           icon: Icons.draw_rounded,
                           onTap: () => onTabRequested(2),
                         ),
@@ -141,7 +142,7 @@ class _AnalyticsPanel extends StatelessWidget {
                           title: '',
                         ),
                         PieChartSectionData(
-                          value: statusMap['In Review']!.toDouble(),
+                          value: statusMap['Awaiting Issuance']!.toDouble(),
                           color: Tok.info,
                           radius: 40,
                           title: '',
@@ -167,9 +168,9 @@ class _AnalyticsPanel extends StatelessWidget {
                       count: statusMap['Pending']!,
                     ),
                     _LegendItem(
-                      label: 'Awaiting Signature',
+                      label: 'Awaiting Issuance',
                       color: Tok.info,
-                      count: statusMap['In Review']!,
+                      count: statusMap['Awaiting Issuance']!,
                     ),
                     _LegendItem(
                       label: 'Officially Issued',
@@ -250,8 +251,11 @@ class _RecentIssuances extends StatelessWidget {
                         ],
                       ),
                     ),
-                    const Icon(Icons.check_circle_outline,
-                        size: 14, color: Tok.ok),
+                    const Icon(
+                      Icons.check_circle_outline,
+                      size: 14,
+                      color: Tok.ok,
+                    ),
                   ],
                 ),
               );
@@ -268,10 +272,11 @@ class _SmallMetricRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      children: metrics
-          .expand((m) => [Expanded(child: m), const SizedBox(width: 16)])
-          .toList()
-        ..removeLast(),
+      children:
+          metrics
+              .expand((m) => [Expanded(child: m), const SizedBox(width: 16)])
+              .toList()
+            ..removeLast(),
     );
   }
 }
@@ -377,8 +382,10 @@ class _MetricCard extends StatelessWidget {
                 children: [
                   Text(title, style: Tok.h1),
                   const SizedBox(height: 4),
-                  Text(subtitle,
-                      style: TextStyle(color: Tok.textLo, fontSize: 12)),
+                  Text(
+                    subtitle,
+                    style: TextStyle(color: Tok.textLo, fontSize: 12),
+                  ),
                   const SizedBox(height: 16),
                   // FIXED: removed `const` — Tok.textHi is a mode-aware getter
                   Text(
