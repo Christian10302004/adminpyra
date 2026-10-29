@@ -61,10 +61,12 @@ class _AuditSheetState extends State<_AuditSheet> {
     penColor: Colors.black,
     exportBackgroundColor: Colors.white,
   );
+  final TextEditingController _inspectorRemarksController = TextEditingController();
 
   @override
   void dispose() {
     _signatureController.dispose();
+    _inspectorRemarksController.dispose();
     super.dispose();
   }
 
@@ -206,6 +208,7 @@ class _AuditSheetState extends State<_AuditSheet> {
         signatureBytes: sigBytes,
         evidenceImages: _evidenceImages,
         evidenceDetections: _evidenceDetections,
+        inspectorRemarks: _inspectorRemarksController.text.trim(),
       );
 
       if (!mounted) return;
@@ -323,7 +326,9 @@ class _AuditSheetState extends State<_AuditSheet> {
                     _Def(label: 'Audit type', value: data['inspection_type']),
                     _Def(label: 'Contact number', value: data['phone']),
                     _Def(label: 'Client email', value: data['email']),
-                    _Def(label: 'Remarks', value: data['remarks'] ?? 'No special remarks'),
+                    _Def(label: 'Client Remarks', value: data['remarks'] ?? 'No special remarks'),
+                    if (data['inspector_remarks'] != null)
+                      _Def(label: 'Inspector Remarks', value: data['inspector_remarks']),
                   ]),
 
                   if (data['lat'] != null && data['lng'] != null) ...[
@@ -427,6 +432,32 @@ class _AuditSheetState extends State<_AuditSheet> {
                       analyzingImages: _analyzingImages,
                       detections: _evidenceDetections,
                       onReAnalyze: _analyzeAllImages,
+                    ),
+
+                    const SizedBox(height: 16),
+                    Text('Inspector Remarks / Findings', style: Tok.h3),
+                    const SizedBox(height: 6),
+                    TextField(
+                      controller: _inspectorRemarksController,
+                      maxLines: 3,
+                      style: Tok.body,
+                      decoration: InputDecoration(
+                        hintText: 'Add remarks on captured evidence (e.g. equipment present but unverified by AI, hazard observations, or notes)...',
+                        hintStyle: Tok.bodySm.copyWith(color: Tok.textLo),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          borderSide: BorderSide(color: Tok.border),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          borderSide: BorderSide(color: Tok.border),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          borderSide: BorderSide(color: Tok.brandSoft),
+                        ),
+                        contentPadding: const EdgeInsets.all(12),
+                      ),
                     ),
 
                     const SizedBox(height: 24),

@@ -408,6 +408,7 @@ void showFullAuditDialog(
                           docId: docId,
                           subcollection: 'evidence',
                           emptyLabel: 'No evidence photos found.',
+                          inspectorRemarks: data['inspector_remarks'] as String?,
                         );
                         final validation = _ValidationColumn(
                           data: data,
@@ -617,12 +618,14 @@ class _AuditDetailsSection extends StatelessWidget {
 
 class _AuditColumn extends StatelessWidget {
   final String title, meta, docId, subcollection, emptyLabel;
+  final String? inspectorRemarks;
   const _AuditColumn({
     required this.title,
     required this.meta,
     required this.docId,
     required this.subcollection,
     required this.emptyLabel,
+    this.inspectorRemarks,
   });
 
   @override
@@ -635,6 +638,44 @@ class _AuditColumn extends StatelessWidget {
         Text(meta,
             style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11)),
         const SizedBox(height: 12),
+        if (subcollection == 'evidence' &&
+            inspectorRemarks != null &&
+            inspectorRemarks!.trim().isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Tok.bg,
+              borderRadius: BorderRadius.circular(Tok.rMd),
+              border: Border.all(color: Tok.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.notes_rounded, size: 14, color: Tok.brand),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Inspector Remarks',
+                      style: TextStyle(
+                        color: Tok.textHi,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  inspectorRemarks!,
+                  style: Tok.bodySm.copyWith(color: Tok.textHi, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
         FutureBuilder<QuerySnapshot?>(
           future: docId.trim().isEmpty
               ? Future.value(null)

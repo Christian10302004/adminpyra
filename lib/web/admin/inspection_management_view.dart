@@ -1457,6 +1457,43 @@ class _InspectionDetailsDialog extends StatelessWidget {
 
                     // Inspector Evidence & AI Detections
                     Text('Inspector Audit Evidence & AI Detections', style: Tok.h2),
+                    if (data['inspector_remarks'] != null &&
+                        (data['inspector_remarks'] as String).trim().isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Tok.bg,
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          border: Border.all(color: Tok.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.notes_rounded, size: 16, color: Tok.brand),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Inspector Remarks',
+                                  style: TextStyle(
+                                    color: Tok.textHi,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              data['inspector_remarks'] as String,
+                              style: Tok.bodySm.copyWith(color: Tok.textHi),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     StreamBuilder<QuerySnapshot>(
                       stream: FirebaseFirestore.instance
@@ -1673,11 +1710,13 @@ class _InspectionDetailsDialog extends StatelessWidget {
     final m = doc.data() as Map<String, dynamic>;
     final b64 = (m['base64'] ?? '').toString();
     final detections = (m['detections'] as List?) ?? const [];
+    final remarks = (m['remarks'] ?? data['inspector_remarks'] ?? '').toString();
     return _buildEvidenceCard(
       context,
       b64: b64,
       detections: detections,
       index: index,
+      remarks: remarks,
     );
   }
 
@@ -1686,6 +1725,7 @@ class _InspectionDetailsDialog extends StatelessWidget {
         required String b64,
         required List<dynamic> detections,
         required int index,
+        String? remarks,
       }) {
     if (b64.isEmpty) return const SizedBox.shrink();
 
@@ -1705,6 +1745,7 @@ class _InspectionDetailsDialog extends StatelessWidget {
               b64,
               detections,
               'Evidence Photo #$index',
+              remarks: remarks,
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(Tok.rSm),
@@ -1734,6 +1775,7 @@ class _InspectionDetailsDialog extends StatelessWidget {
                         b64,
                         detections,
                         'Evidence Photo #$index',
+                        remarks: remarks,
                       ),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -2039,8 +2081,9 @@ void _showEvidenceLightbox(
   BuildContext context,
   String base64,
   List<dynamic> detections,
-  String title,
-) {
+  String title, {
+  String? remarks,
+}) {
   final isPdf = _isPdfData(base64, title);
 
   showDialog(
@@ -2192,6 +2235,42 @@ void _showEvidenceLightbox(
                     if (detections.isNotEmpty) ...[
                       const SizedBox(height: 16),
                       _buildDetectionsSplitView(detections),
+                    ],
+                    if (remarks != null && remarks.trim().isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Tok.bg,
+                          borderRadius: BorderRadius.circular(Tok.rMd),
+                          border: Border.all(color: Tok.border),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.notes_rounded, size: 16, color: Tok.brand),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Inspector Remarks',
+                                  style: TextStyle(
+                                    color: Tok.textHi,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              remarks,
+                              style: Tok.bodySm.copyWith(color: Tok.textHi),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ],
                 ),

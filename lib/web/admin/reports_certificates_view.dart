@@ -493,6 +493,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
           .snapshots(),
       primaryBase64: data?['evidence_base64'] as String?,
       emptyLabel: 'No inspection photos were uploaded for this request.',
+      inspectorRemarks: data?['inspector_remarks'] as String?,
     );
   }
 
@@ -638,6 +639,8 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                             docId: docId,
                             subcollection: 'evidence',
                             emptyLabel: 'No evidence photos found.',
+                            inspectorRemarks:
+                                data['inspector_remarks'] as String?,
                           );
                           final validation = _ValidationColumn(
                             data: data,
@@ -688,6 +691,7 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
     List<_MediaItem>? items,
     String? primaryBase64,
     String? emptyLabel,
+    String? inspectorRemarks,
   }) {
     showDialog(
       context: context,
@@ -812,6 +816,51 @@ class _ReportsCertificatesViewState extends State<ReportsCertificatesView> {
                                     inspectionType: inspectionType,
                                     uploadedCount: list.length,
                                   ),
+                                if (inspectorRemarks != null &&
+                                    inspectorRemarks.trim().isNotEmpty) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(bottom: 16),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Tok.bg,
+                                      borderRadius:
+                                          BorderRadius.circular(Tok.rMd),
+                                      border: Border.all(color: Tok.border),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Icon(
+                                              Icons.notes_rounded,
+                                              size: 16,
+                                              color: Tok.brand,
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              'Inspector Remarks',
+                                              style: TextStyle(
+                                                color: Tok.textHi,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          inspectorRemarks,
+                                          style: Tok.bodySm.copyWith(
+                                            color: Tok.textHi,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 if (list.isEmpty)
                                   EmptyState(
                                     icon: Icons.image_outlined,
@@ -1852,6 +1901,7 @@ class _AuditColumn extends StatelessWidget {
   final String docId;
   final String subcollection;
   final String emptyLabel;
+  final String? inspectorRemarks;
 
   const _AuditColumn({
     required this.title,
@@ -1859,6 +1909,7 @@ class _AuditColumn extends StatelessWidget {
     required this.docId,
     required this.subcollection,
     required this.emptyLabel,
+    this.inspectorRemarks,
   });
 
   @override
@@ -1870,6 +1921,44 @@ class _AuditColumn extends StatelessWidget {
         const SizedBox(height: 2),
         Text(meta, style: Tok.bodySm.copyWith(color: Tok.textLo, fontSize: 11)),
         const SizedBox(height: 12),
+        if (subcollection == 'evidence' &&
+            inspectorRemarks != null &&
+            inspectorRemarks!.trim().isNotEmpty) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Tok.bg,
+              borderRadius: BorderRadius.circular(Tok.rMd),
+              border: Border.all(color: Tok.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.notes_rounded, size: 14, color: Tok.brand),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Inspector Remarks',
+                      style: TextStyle(
+                        color: Tok.textHi,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  inspectorRemarks!,
+                  style: Tok.bodySm.copyWith(color: Tok.textHi, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+        ],
         FutureBuilder<QuerySnapshot>(
           future: FirebaseFirestore.instance
               .collection('inspection_requests')
@@ -1959,6 +2048,10 @@ class _AuditColumn extends StatelessWidget {
                             'Requirement Document')
                         .toString();
                 final detections = (data['detections'] as List?) ?? const [];
+                final docRemarks = (data['remarks'] ?? '').toString();
+                final displayRemarks = docRemarks.isNotEmpty
+                    ? docRemarks
+                    : (inspectorRemarks ?? '');
                 if (base64 == null || base64.isEmpty) {
                   return const SizedBox.shrink();
                 }
@@ -2149,6 +2242,55 @@ class _AuditColumn extends StatelessWidget {
                                             ),
                                           ),
                                         ),
+                                      if (displayRemarks.isNotEmpty) ...[
+                                        const SizedBox(height: 12),
+                                        Container(
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: Tok.bg,
+                                            borderRadius:
+                                                BorderRadius.circular(
+                                                  Tok.rMd,
+                                                ),
+                                            border: Border.all(
+                                              color: Tok.border,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Icon(
+                                                    Icons.notes_rounded,
+                                                    size: 16,
+                                                    color: Tok.brand,
+                                                  ),
+                                                  const SizedBox(width: 6),
+                                                  Text(
+                                                    'Inspector Remarks',
+                                                    style: TextStyle(
+                                                      color: Tok.textHi,
+                                                      fontSize: 12,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                displayRemarks,
+                                                style: Tok.bodySm.copyWith(
+                                                  color: Tok.textHi,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                       if (detections.isNotEmpty) ...[
                                         const SizedBox(height: 16),
                                         Container(
